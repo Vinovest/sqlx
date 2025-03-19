@@ -1,6 +1,10 @@
 # sqlx
 
-[![CircleCI](https://dl.circleci.com/status-badge/img/gh/jmoiron/sqlx/tree/master.svg?style=shield)](https://dl.circleci.com/status-badge/redirect/gh/jmoiron/sqlx/tree/master) [![Coverage Status](https://coveralls.io/repos/github/jmoiron/sqlx/badge.svg?branch=master)](https://coveralls.io/github/jmoiron/sqlx?branch=master) [![Godoc](http://img.shields.io/badge/godoc-reference-blue.svg?style=flat)](https://godoc.org/github.com/jmoiron/sqlx) [![license](http://img.shields.io/badge/license-MIT-red.svg?style=flat)](https://raw.githubusercontent.com/jmoiron/sqlx/master/LICENSE)
+[![Go Coverage](https://github.com/vinovest/sqlx/wiki/coverage.svg)](https://raw.githack.com/wiki/vinovest/sqlx/coverage.html) [![license](https://img.shields.io/badge/license-MIT-green/.svg?style=flat)](https://raw.githubusercontent.com/vinovest/sqlx/master/LICENSE)
+
+This is Vinovest's fork of https://github.com/jmoiron/sqlx.git for ongoing support. Sqlx hasn't been updated in a while
+and we use it extensively, so we're going to maintain this fork with some additional features and bug fixes.
+You're welcome to use and contribute to this fork!
 
 sqlx is a library which provides a set of extensions on go's standard
 `database/sql` library.  The sqlx versions of `sql.DB`, `sql.TX`, `sql.Stmt`,
