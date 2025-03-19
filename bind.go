@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/jmoiron/sqlx/reflectx"
+	"github.com/muir/sqltoken"
 )
 
 // Bindvar types supported by Rebind, BindMap and BindStruct.
@@ -30,13 +31,31 @@ var defaultBinds = map[int][]string{
 
 var binds sync.Map
 
+var rebindConfigs = func() []sqltoken.Config {
+	configs := make([]sqltoken.Config, AT+1)
+	pg := sqltoken.PostgreSQLConfig()
+	pg.NoticeQuestionMark = true
+	pg.NoticeDollarNumber = false
+	configs[DOLLAR] = pg
+
+	ora := sqltoken.OracleConfig()
+	ora.NoticeColonWord = false
+	ora.NoticeQuestionMark = true
+	configs[NAMED] = ora
+
+	ssvr := sqltoken.SQLServerConfig()
+	ssvr.NoticeAtWord = false
+	ssvr.NoticeQuestionMark = true
+	configs[AT] = ssvr
+	return configs
+}()
+
 func init() {
 	for bind, drivers := range defaultBinds {
 		for _, driver := range drivers {
 			BindDriver(driver, bind)
 		}
 	}
-
 }
 
 // BindType returns the bindtype for a given database given a drivername.
@@ -53,24 +72,22 @@ func BindDriver(driverName string, bindType int) {
 	binds.Store(driverName, bindType)
 }
 
-// FIXME: this should be able to be tolerant of escaped ?'s in queries without
-// losing much speed, and should be to avoid confusion.
-
 // Rebind a query from the default bindtype (QUESTION) to the target bindtype.
 func Rebind(bindType int, query string) string {
 	switch bindType {
 	case QUESTION, UNKNOWN:
 		return query
 	}
-
-	// Add space enough for 10 params before we have to allocate
+	config := rebindConfigs[bindType]
+	tokens := sqltoken.Tokenize(query, config)
 	rqb := make([]byte, 0, len(query)+10)
 
-	var i, j int
-
-	for i = strings.Index(query, "?"); i != -1; i = strings.Index(query, "?") {
-		rqb = append(rqb, query[:i]...)
-
+	var j int
+	for _, token := range tokens {
+		if token.Type != sqltoken.QuestionMark {
+			rqb = append(rqb, ([]byte)(token.Text)...)
+			continue
+		}
 		switch bindType {
 		case DOLLAR:
 			rqb = append(rqb, '$')
@@ -79,14 +96,10 @@ func Rebind(bindType int, query string) string {
 		case AT:
 			rqb = append(rqb, '@', 'p')
 		}
-
 		j++
 		rqb = strconv.AppendInt(rqb, int64(j), 10)
-
-		query = query[i+1:]
 	}
-
-	return string(append(rqb, query...))
+	return string(rqb)
 }
 
 // Experimental implementation of Rebind which uses a bytes.Buffer.  The code is
@@ -130,7 +143,6 @@ func asSliceForIn(i interface{}) (v reflect.Value, ok bool) {
 	// []byte is a driver.Value type so it should not be expanded
 	if t == reflect.TypeOf([]byte{}) {
 		return reflect.Value{}, false
-
 	}
 
 	return v, true
