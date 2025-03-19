@@ -1,6 +1,3 @@
-//go:build go1.8
-// +build go1.8
-
 // The following environment variables, if set, will be used:
 //
 //   - SQLX_SQLITE_DSN
