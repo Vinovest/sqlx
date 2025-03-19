@@ -6,7 +6,7 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"errors"
-	"io/ioutil"
+	"io"
 )
 
 // GzippedText is a []byte which transparently gzips data being submitted to
@@ -43,7 +43,7 @@ func (g *GzippedText) Scan(src interface{}) error {
 		return err
 	}
 	defer reader.Close()
-	b, err := ioutil.ReadAll(reader)
+	b, err := io.ReadAll(reader)
 	if err != nil {
 		return err
 	}

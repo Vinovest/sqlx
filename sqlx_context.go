@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"path/filepath"
 	"reflect"
 )
@@ -97,7 +97,7 @@ func LoadFileContext(ctx context.Context, e ExecerContext, path string) (*sql.Re
 	if err != nil {
 		return nil, err
 	}
-	contents, err := ioutil.ReadFile(realpath)
+	contents, err := os.ReadFile(realpath)
 	if err != nil {
 		return nil, err
 	}
