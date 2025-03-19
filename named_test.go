@@ -140,12 +140,16 @@ func (t Test) Errorf(err error, format string, args ...interface{}) {
 }
 
 func TestEscapedColons(t *testing.T) {
-	t.Skip("not sure it is possible to support this in general case without an SQL parser")
-	qs := `SELECT * FROM testtable WHERE timeposted BETWEEN (now() AT TIME ZONE 'utc') AND
-	(now() AT TIME ZONE 'utc') - interval '01:30:00') AND name = '\'this is a test\'' and id = :id`
-	_, _, err := compileNamedQuery([]byte(qs), DOLLAR)
+	qs := `SELECT * FROM testtable WHERE timeposted::text BETWEEN (now() AT TIME ZONE 'utc') AND
+	(now() AT TIME ZONE 'utc') - interval '01:30:00' AND name = 'this is a test' and id = :id`
+	sql, _, err := compileNamedQuery([]byte(qs), DOLLAR)
 	if err != nil {
 		t.Error("Didn't handle colons correctly when inside a string")
+	}
+	expected := `SELECT * FROM testtable WHERE timeposted::text BETWEEN (now() AT TIME ZONE 'utc') AND
+	(now() AT TIME ZONE 'utc') - interval '01:30:00' AND name = 'this is a test' and id = $1`
+	if sql != expected {
+		t.Errorf("\nexpected: `%s`\ngot(D):      `%s`", expected, sql)
 	}
 }
 
