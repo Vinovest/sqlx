@@ -1736,7 +1736,7 @@ func TestGet(t *testing.T) {
 		drop:   `drop table tst;`,
 	}
 
-	RunWithSchema(schema, t, func(db *DB, t *testing.T) {
+	RunWithSchema(schema, t, func(db *DB, t *testing.T, now string) {
 		for _, v := range []int{1, 2} {
 			_, err := db.Exec(db.Rebind("INSERT INTO tst (v) VALUES (?)"), v)
 			if err != nil {

@@ -276,7 +276,7 @@ func TestNamedQueries(t *testing.T) {
 
 		for _, p := range sls {
 			dest := Person{}
-			err = db.Get(&dest, db.Rebind("SELECT * FROM person WHERE email=?"), p.Email)
+			err = db.Get(&dest, db.Rebind("SELECT * FROM person WHERE email=? limit 1"), p.Email)
 			test.Error(err)
 			if dest.Email != p.Email {
 				t.Errorf("expected %s, got %s", p.Email, dest.Email)
