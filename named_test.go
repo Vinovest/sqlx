@@ -142,14 +142,32 @@ func (t Test) Errorf(err error, format string, args ...interface{}) {
 func TestEscapedColons(t *testing.T) {
 	qs := `SELECT * FROM testtable WHERE timeposted::text BETWEEN (now() AT TIME ZONE 'utc') AND
 	(now() AT TIME ZONE 'utc') - interval '01:30:00' AND name = 'this is a test' and id = :id`
-	sql, _, err := compileNamedQuery([]byte(qs), DOLLAR)
+	query, names, err := compileNamedQuery([]byte(qs), DOLLAR)
 	if err != nil {
 		t.Error("Didn't handle colons correctly when inside a string")
 	}
 	expected := `SELECT * FROM testtable WHERE timeposted::text BETWEEN (now() AT TIME ZONE 'utc') AND
 	(now() AT TIME ZONE 'utc') - interval '01:30:00' AND name = 'this is a test' and id = $1`
-	if sql != expected {
-		t.Errorf("\nexpected: `%s`\ngot(D):      `%s`", expected, sql)
+	if query != expected {
+		t.Errorf("\nexpected: `%s`\ngot(D):      `%s`", expected, query)
+	}
+	if len(names) != 1 {
+		t.Errorf("Expected 1 name, got %v", names)
+	}
+}
+
+func TestCommentBindName(t *testing.T) {
+	qs := `SELECT * FROM testtable -- where 1 = :name`
+	query, names, err := compileNamedQuery([]byte(qs), QUESTION)
+	if err != nil {
+		t.Error("Didn't handle colons correctly when inside a string")
+	}
+	expected := "SELECT * FROM testtable -- where 1 = :name"
+	if query != expected {
+		t.Errorf("\nexpected: `%s`\ngot(D):      `%s`", expected, query)
+	}
+	if len(names) != 0 {
+		t.Errorf("Expected no names, got %v", names)
 	}
 }
 
