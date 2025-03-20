@@ -2,7 +2,7 @@
 SHELL = /bin/sh
 .SHELLFLAGS = -ec
 
-BASE_PACKAGE := github.com/jmoiron/sqlx
+BASE_PACKAGE := github.com/vinovest/sqlx
 
 tooling:
 	go install honnef.co/go/tools/cmd/staticcheck@v0.6.1

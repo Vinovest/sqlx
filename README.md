@@ -50,7 +50,7 @@ will get major version number bumps.
 
 ## install
 
-    go get github.com/jmoiron/sqlx
+    go get github.com/vinovest/sqlx
 
 ## issues
 
@@ -68,7 +68,7 @@ to give columns distinct names, `rows.Scan` to scan them manually, or
 ## usage
 
 Below is an example which shows some common use cases for sqlx.  Check 
-[sqlx_test.go](https://github.com/jmoiron/sqlx/blob/master/sqlx_test.go) for more
+[sqlx_test.go](https://github.com/vinovest/sqlx/blob/master/sqlx_test.go) for more
 usage.
 
 
@@ -81,7 +81,7 @@ import (
     "log"
     
     _ "github.com/lib/pq"
-    "github.com/jmoiron/sqlx"
+    "github.com/vinovest/sqlx"
 )
 
 var schema = `

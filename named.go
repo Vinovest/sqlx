@@ -19,7 +19,7 @@ import (
 	"regexp"
 	"strconv"
 
-	"github.com/jmoiron/sqlx/reflectx"
+	"github.com/vinovest/sqlx/reflectx"
 	"github.com/muir/sqltoken"
 )
 
