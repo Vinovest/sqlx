@@ -12,7 +12,6 @@ package sqlx
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"log"
 	"strings"
@@ -1161,47 +1160,6 @@ func TestEmbeddedMapsContext(t *testing.T) {
 		if m.Properties == nil {
 			t.Fatal("Expected m.Properties to not be nil, but it was.")
 		}
-	})
-}
-
-func TestIssue197Context(t *testing.T) {
-	// this test actually tests for a bug in database/sql:
-	//   https://github.com/golang/go/issues/13905
-	// this potentially makes _any_ named type that is an alias for []byte
-	// unsafe to use in a lot of different ways (basically, unsafe to hold
-	// onto after loading from the database).
-	t.Skip()
-
-	type mybyte []byte
-	type Var struct{ Raw json.RawMessage }
-	type Var2 struct{ Raw []byte }
-	type Var3 struct{ Raw mybyte }
-	RunWithSchemaContext(context.Background(), defaultSchema, t, func(ctx context.Context, db *DB, t *testing.T) {
-		var err error
-		var v, q Var
-		if err = db.GetContext(ctx, &v, `SELECT '{"a": "b"}' AS raw`); err != nil {
-			t.Fatal(err)
-		}
-		if err = db.GetContext(ctx, &q, `SELECT 'null' AS raw`); err != nil {
-			t.Fatal(err)
-		}
-
-		var v2, q2 Var2
-		if err = db.GetContext(ctx, &v2, `SELECT '{"a": "b"}' AS raw`); err != nil {
-			t.Fatal(err)
-		}
-		if err = db.GetContext(ctx, &q2, `SELECT 'null' AS raw`); err != nil {
-			t.Fatal(err)
-		}
-
-		var v3, q3 Var3
-		if err = db.QueryRowContext(ctx, `SELECT '{"a": "b"}' AS raw`).Scan(&v3.Raw); err != nil {
-			t.Fatal(err)
-		}
-		if err = db.QueryRowContext(ctx, `SELECT '{"c": "d"}' AS raw`).Scan(&q3.Raw); err != nil {
-			t.Fatal(err)
-		}
-		t.Fail()
 	})
 }
 
