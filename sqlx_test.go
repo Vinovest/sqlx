@@ -2032,9 +2032,9 @@ func TestMultiResultSet(t *testing.T) {
 		if rows.NextResultSet() {
 			t.Fatalf("[%s] Did not expected a second recordset", db.DriverName())
 		}
-  })
+	})
 }
-                
+
 func TestSelectReset(t *testing.T) {
 	RunWithSchema(defaultSchema, t, func(db *DB, t *testing.T, now string) {
 		loadDefaultFixture(db, t)
