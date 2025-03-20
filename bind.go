@@ -9,8 +9,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/vinovest/sqlx/reflectx"
 	"github.com/muir/sqltoken"
+
+	"github.com/vinovest/sqlx/reflectx"
 )
 
 // Bindvar types supported by Rebind, BindMap and BindStruct.

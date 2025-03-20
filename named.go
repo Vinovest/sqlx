@@ -19,8 +19,9 @@ import (
 	"regexp"
 	"strconv"
 
-	"github.com/vinovest/sqlx/reflectx"
 	"github.com/muir/sqltoken"
+
+	"github.com/vinovest/sqlx/reflectx"
 )
 
 // NamedStmt is a prepared statement that executes named queries.  Prepare it
