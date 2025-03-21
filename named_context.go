@@ -14,17 +14,17 @@ type namedPreparerContext interface {
 
 func prepareNamedContext(ctx context.Context, p namedPreparerContext, query string) (*NamedStmt, error) {
 	bindType := BindType(p.DriverName())
-	q, args, err := compileNamedQuery([]byte(query), bindType)
+	compiled, err := compileNamedQuery([]byte(query), bindType)
 	if err != nil {
 		return nil, err
 	}
-	stmt, err := PreparexContext(ctx, p, q)
+	stmt, err := PreparexContext(ctx, p, compiled.query)
 	if err != nil {
 		return nil, err
 	}
 	return &NamedStmt{
-		QueryString: q,
-		Params:      args,
+		QueryString: compiled.query,
+		Params:      compiled.names,
 		Stmt:        stmt,
 	}, nil
 }
