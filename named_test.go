@@ -579,6 +579,30 @@ FROM (VALUES (:name, :age, :address, :owner_email),(:name, :age, :address, :owne
 		  ON p.email = owner_email;`,
 			loop: 2,
 		},
+		{
+			name: `from values`,
+			query: `UPDATE
+		foo_table f
+	SET
+		foo = v.foo
+	FROM (
+		VALUES
+		(:id, :foo)
+	) AS v ( id, foo )
+	WHERE
+		f.id = v.id;`,
+			expect: `UPDATE
+		foo_table f
+	SET
+		foo = v.foo
+	FROM (
+		VALUES
+		(:id, :foo),(:id, :foo)
+	) AS v ( id, foo )
+	WHERE
+		f.id = v.id;`,
+			loop: 2,
+		},
 	}
 
 	for _, tc := range table {
