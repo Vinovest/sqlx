@@ -227,10 +227,11 @@ func fixBound(cq *compiledQueryResult, loop int) {
 	if cq.valuesStart == nil || cq.valuesEnd == nil {
 		return
 	}
-	length := (int(*cq.valuesEnd-1)-int(*cq.valuesStart))*loop +
+	buffer := bytes.NewBuffer(make([]byte, 0, (int(*cq.valuesEnd-1)-int(*cq.valuesStart))*loop+
 		// bytes for commas, too
-		(loop - 1)
-	buffer := bytes.NewBuffer(make([]byte, 0, length))
+		(loop-1)+
+		// plus the query
+		(len(cq.query)-int(*cq.valuesEnd)+int(*cq.valuesStart))))
 
 	buffer.WriteString(cq.query[0:*cq.valuesEnd])
 	for i := 0; i < loop-1; i++ {

@@ -530,3 +530,33 @@ WHERE t.id = u.id
 		})
 	}
 }
+
+func BenchmarkFixBound10(b *testing.B) {
+	query := `INSERT INTO foo (a,b) VALUES(:a, :b)`
+	loop := 10
+	b.ReportAllocs()
+
+	cq, err := compileNamedQuery([]byte(query), NAMED)
+	if err != nil {
+		b.Error(err)
+		return
+	}
+	for i := 0; i < b.N; i++ {
+		fixBound(&cq, loop)
+	}
+}
+
+func BenchmarkFixBound100(b *testing.B) {
+	query := `INSERT INTO foo (a,b) VALUES(:a, :b)`
+	loop := 100
+	b.ReportAllocs()
+
+	cq, err := compileNamedQuery([]byte(query), NAMED)
+	if err != nil {
+		b.Error(err)
+		return
+	}
+	for i := 0; i < b.N; i++ {
+		fixBound(&cq, loop)
+	}
+}
