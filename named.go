@@ -16,8 +16,8 @@ import (
 	"database/sql"
 	"fmt"
 	"reflect"
-	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/muir/sqltoken"
 
@@ -131,17 +131,17 @@ type namedPreparer interface {
 
 func prepareNamed(p namedPreparer, query string) (*NamedStmt, error) {
 	bindType := BindType(p.DriverName())
-	q, args, err := compileNamedQuery([]byte(query), bindType)
+	compiled, err := compileNamedQuery([]byte(query), bindType)
 	if err != nil {
 		return nil, err
 	}
-	stmt, err := Preparex(p, q)
+	stmt, err := Preparex(p, compiled.query)
 	if err != nil {
 		return nil, err
 	}
 	return &NamedStmt{
-		QueryString: q,
-		Params:      args,
+		QueryString: compiled.query,
+		Params:      compiled.names,
 		Stmt:        stmt,
 	}, nil
 }
@@ -210,61 +210,35 @@ func bindMapArgs(names []string, arg map[string]interface{}) ([]interface{}, err
 // The rules for binding field names to parameter names follow the same
 // conventions as for StructScan, including obeying the `db` struct tags.
 func bindStruct(bindType int, query string, arg interface{}, m *reflectx.Mapper) (string, []interface{}, error) {
-	bound, names, err := compileNamedQuery([]byte(query), bindType)
+	compiled, err := compileNamedQuery([]byte(query), bindType)
 	if err != nil {
 		return "", []interface{}{}, err
 	}
 
-	arglist, err := bindAnyArgs(names, arg, m)
+	arglist, err := bindAnyArgs(compiled.names, arg, m)
 	if err != nil {
 		return "", []interface{}{}, err
 	}
 
-	return bound, arglist, nil
+	return compiled.query, arglist, nil
 }
 
-var valuesReg = regexp.MustCompile(`\)\s*(?i)VALUES\s*\(`)
-
-func findMatchingClosingBracketIndex(s string) int {
-	count := 0
-	for i, ch := range s {
-		if ch == '(' {
-			count++
-		}
-		if ch == ')' {
-			count--
-			if count == 0 {
-				return i
-			}
-		}
+func fixBound(cq *compiledQueryResult, loop int) {
+	if cq.valuesStart == nil || cq.valuesEnd == nil {
+		return
 	}
-	return 0
-}
+	length := (int(*cq.valuesEnd-1)-int(*cq.valuesStart))*loop +
+		// bytes for commas, too
+		(loop - 1)
+	buffer := bytes.NewBuffer(make([]byte, 0, length))
 
-func fixBound(bound string, loop int) string {
-	loc := valuesReg.FindStringIndex(bound)
-	// defensive guard when "VALUES (...)" not found
-	if len(loc) < 2 {
-		return bound
-	}
-
-	openingBracketIndex := loc[1] - 1
-	index := findMatchingClosingBracketIndex(bound[openingBracketIndex:])
-	// defensive guard. must have closing bracket
-	if index == 0 {
-		return bound
-	}
-	closingBracketIndex := openingBracketIndex + index + 1
-
-	var buffer bytes.Buffer
-
-	buffer.WriteString(bound[0:closingBracketIndex])
+	buffer.WriteString(cq.query[0:*cq.valuesEnd])
 	for i := 0; i < loop-1; i++ {
 		buffer.WriteString(",")
-		buffer.WriteString(bound[openingBracketIndex:closingBracketIndex])
+		buffer.WriteString(cq.query[*cq.valuesStart:*cq.valuesEnd])
 	}
-	buffer.WriteString(bound[closingBracketIndex:])
-	return buffer.String()
+	buffer.WriteString(cq.query[*cq.valuesEnd:])
+	cq.query = buffer.String()
 }
 
 // bindArray binds a named parameter query with fields from an array or slice of
@@ -272,7 +246,7 @@ func fixBound(bound string, loop int) string {
 func bindArray(bindType int, query string, arg interface{}, m *reflectx.Mapper) (string, []interface{}, error) {
 	// do the initial binding with QUESTION;  if bindType is not question,
 	// we can rebind it at the end.
-	bound, names, err := compileNamedQuery([]byte(query), QUESTION)
+	compiled, err := compileNamedQuery([]byte(query), QUESTION)
 	if err != nil {
 		return "", []interface{}{}, err
 	}
@@ -281,18 +255,19 @@ func bindArray(bindType int, query string, arg interface{}, m *reflectx.Mapper) 
 	if arrayLen == 0 {
 		return "", []interface{}{}, fmt.Errorf("length of array is 0: %#v", arg)
 	}
-	arglist := make([]interface{}, 0, len(names)*arrayLen)
+	arglist := make([]interface{}, 0, len(compiled.names)*arrayLen)
 	for i := 0; i < arrayLen; i++ {
-		elemArglist, err := bindAnyArgs(names, arrayValue.Index(i).Interface(), m)
+		elemArglist, err := bindAnyArgs(compiled.names, arrayValue.Index(i).Interface(), m)
 		if err != nil {
 			return "", []interface{}{}, err
 		}
 		arglist = append(arglist, elemArglist...)
 	}
 	if arrayLen > 1 {
-		bound = fixBound(bound, arrayLen)
+		fixBound(&compiled, arrayLen)
 	}
 	// adjust binding type if we weren't on question
+	bound := compiled.query
 	if bindType != QUESTION {
 		bound = Rebind(bindType, bound)
 	}
@@ -301,13 +276,13 @@ func bindArray(bindType int, query string, arg interface{}, m *reflectx.Mapper) 
 
 // bindMap binds a named parameter query with a map of arguments.
 func bindMap(bindType int, query string, args map[string]interface{}) (string, []interface{}, error) {
-	bound, names, err := compileNamedQuery([]byte(query), bindType)
+	compiled, err := compileNamedQuery([]byte(query), bindType)
 	if err != nil {
 		return "", []interface{}{}, err
 	}
 
-	arglist, err := bindMapArgs(names, args)
-	return bound, arglist, err
+	arglist, err := bindMapArgs(compiled.names, args)
+	return compiled.query, arglist, err
 }
 
 var namedParseConfigs = func() []sqltoken.Config {
@@ -316,10 +291,12 @@ var namedParseConfigs = func() []sqltoken.Config {
 	pg.NoticeColonWord = true
 	pg.ColonWordIncludesUnicode = true
 	pg.NoticeDollarNumber = false
+	pg.NoticeQuestionMark = true
 	configs[DOLLAR] = pg
 
 	ora := sqltoken.OracleConfig()
 	ora.ColonWordIncludesUnicode = true
+	ora.NoticeQuestionMark = true
 	configs[NAMED] = ora
 
 	ssvr := sqltoken.SQLServerConfig()
@@ -331,7 +308,7 @@ var namedParseConfigs = func() []sqltoken.Config {
 	mysql := sqltoken.MySQLConfig()
 	mysql.NoticeColonWord = true
 	mysql.ColonWordIncludesUnicode = true
-	mysql.NoticeQuestionMark = false
+	mysql.NoticeQuestionMark = true
 	configs[QUESTION] = mysql
 	configs[UNKNOWN] = mysql
 	return configs
@@ -346,38 +323,92 @@ var namedParseConfigs = func() []sqltoken.Config {
 // addition of the prepared NamedStmt (which will only do this once) will make
 // up for the slightly slower ad-hoc NamedExec/NamedQuery.
 
+type compiledQueryResult struct {
+	// the query string with the named parameters swapped out with bindvars
+	query string
+
+	// the name of the parameter
+	names []string
+
+	// byte position in the query string, start of it including :
+	namePositions []uint32
+
+	// if set, the start position of the VALUES argument list not including () (end inclusive)
+	valuesStart *uint32
+	valuesEnd   *uint32
+}
+
 // compile a NamedQuery into an unbound query (using the '?' bindvar) and
 // a list of names.
-func compileNamedQuery(qs []byte, bindType int) (query string, names []string, err error) {
-	names = make([]string, 0, 10)
+func compileNamedQuery(qs []byte, bindType int) (compiledQueryResult, error) {
+	r := compiledQueryResult{
+		names:         make([]string, 0, 10),
+		namePositions: make([]uint32, 0, 10),
+	}
+	curpos := uint32(0)
 	rebound := make([]byte, 0, len(qs))
+	inValues := false
+	inValuesOpenCount := 0
 
 	currentVar := 1
 	tokens := sqltoken.Tokenize(string(qs), namedParseConfigs[bindType])
 
 	for _, token := range tokens {
+		if token.Type == sqltoken.Word && strings.EqualFold("values", token.Text) && !inValues {
+			// current behavior: expand the first values and ignore the rest
+			if r.valuesStart == nil { // did we already parse a values statement?
+				inValues = true
+			}
+		}
+		if inValues && token.Type == sqltoken.Punctuation {
+			if token.Text == "(" {
+				start := curpos
+				inValuesOpenCount += 1
+				if r.valuesStart == nil {
+					r.valuesStart = &start
+				}
+			}
+			if token.Text == ")" {
+				inValuesOpenCount -= 1
+				if inValuesOpenCount == 0 {
+					end := curpos + 1
+					r.valuesEnd = &end
+					inValues = false
+				}
+			}
+		}
 		if token.Type != sqltoken.ColonWord {
 			rebound = append(rebound, ([]byte)(token.Text)...)
+			curpos += uint32(len(token.Text))
 			continue
 		}
-		names = append(names, token.Text[1:])
+		r.names = append(r.names, token.Text[1:])
+		r.namePositions = append(r.namePositions, curpos)
+
+		newBound := ""
 		switch bindType {
 		// oracle only supports named type bind vars even for positional
 		case NAMED:
-			rebound = append(rebound, ([]byte)(token.Text)...)
+			newBound = token.Text
 		case QUESTION, UNKNOWN:
-			rebound = append(rebound, '?')
+			newBound = "?"
 		case DOLLAR:
-			rebound = append(rebound, '$')
-			rebound = strconv.AppendInt(rebound, int64(currentVar), 10)
+			newBound = "$" + strconv.Itoa(currentVar)
 			currentVar++
 		case AT:
-			rebound = append(rebound, '@', 'p')
-			rebound = strconv.AppendInt(rebound, int64(currentVar), 10)
+			newBound = "@p" + strconv.Itoa(currentVar)
 			currentVar++
 		}
+
+		rebound = append(rebound, []byte(newBound)...)
+		curpos += uint32(len(newBound))
 	}
-	return string(rebound), names, nil
+
+	if inValues {
+		return r, fmt.Errorf("missing closing bracket in VALUES")
+	}
+	r.query = string(rebound)
+	return r, nil
 }
 
 // BindNamed binds a struct or a map to a query with named parameters.

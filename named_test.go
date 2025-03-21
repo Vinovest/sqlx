@@ -2,6 +2,7 @@ package sqlx
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"testing"
 )
@@ -83,35 +84,35 @@ func TestCompileQuery(t *testing.T) {
 				t.Log(test.d)
 			}
 			t.Log(test.Q)
-			qr, names, err := compileNamedQuery([]byte(test.Q), QUESTION)
+			compiled, err := compileNamedQuery([]byte(test.Q), QUESTION)
 			if err != nil {
 				t.Error(err)
 			}
-			if qr != test.R {
-				t.Errorf("R: expected %s, got(R) %s", test.R, qr)
+			if compiled.query != test.R {
+				t.Errorf("R: expected %s, got(R) %s", test.R, compiled.query)
 			}
-			if len(names) != len(test.V) {
-				t.Errorf("V: expected %#v, got(V) %#v", test.V, names)
+			if len(compiled.names) != len(test.V) {
+				t.Errorf("V: expected %#v, got(V) %#v", test.V, compiled.names)
 			} else {
-				for i, name := range names {
+				for i, name := range compiled.names {
 					if name != test.V[i] {
 						t.Errorf("expected %dth name to be %s, got(V) %s", i+1, test.V[i], name)
 					}
 				}
 			}
-			qd, _, _ := compileNamedQuery([]byte(test.Q), DOLLAR)
-			if qd != test.D {
-				t.Errorf("\nexpected: `%s`\ngot(D):      `%s`", test.D, qd)
+			compiled, _ = compileNamedQuery([]byte(test.Q), DOLLAR)
+			if compiled.query != test.D {
+				t.Errorf("\nexpected: `%s`\ngot(D):      `%s`", test.D, compiled.query)
 			}
 
-			qt, _, _ := compileNamedQuery([]byte(test.Q), AT)
-			if qt != test.T {
-				t.Errorf("\nexpected: `%s`\ngot(T):      `%s`", test.T, qt)
+			compiled, _ = compileNamedQuery([]byte(test.Q), AT)
+			if compiled.query != test.T {
+				t.Errorf("\nexpected: `%s`\ngot(T):      `%s`", test.T, compiled.query)
 			}
 
-			qq, _, _ := compileNamedQuery([]byte(test.Q), NAMED)
-			if qq != test.N {
-				t.Errorf("\nexpected: `%s`\ngot(N):      `%s`\n(len: %d vs %d)", test.N, qq, len(test.N), len(qq))
+			compiled, _ = compileNamedQuery([]byte(test.Q), NAMED)
+			if compiled.query != test.N {
+				t.Errorf("\nexpected: `%s`\ngot(N):      `%s`\n(len: %d vs %d)", test.N, compiled.query, len(test.N), len(compiled.query))
 			}
 		})
 	}
@@ -142,32 +143,32 @@ func (t Test) Errorf(err error, format string, args ...interface{}) {
 func TestEscapedColons(t *testing.T) {
 	qs := `SELECT * FROM testtable WHERE timeposted::text BETWEEN (now() AT TIME ZONE 'utc') AND
 	(now() AT TIME ZONE 'utc') - interval '01:30:00' AND name = 'this is a test' and id = :id`
-	query, names, err := compileNamedQuery([]byte(qs), DOLLAR)
+	compiled, err := compileNamedQuery([]byte(qs), DOLLAR)
 	if err != nil {
 		t.Error("Didn't handle colons correctly when inside a string")
 	}
 	expected := `SELECT * FROM testtable WHERE timeposted::text BETWEEN (now() AT TIME ZONE 'utc') AND
 	(now() AT TIME ZONE 'utc') - interval '01:30:00' AND name = 'this is a test' and id = $1`
-	if query != expected {
-		t.Errorf("\nexpected: `%s`\ngot(D):      `%s`", expected, query)
+	if compiled.query != expected {
+		t.Errorf("\nexpected: `%s`\ngot(D):      `%s`", expected, compiled.query)
 	}
-	if len(names) != 1 {
-		t.Errorf("Expected 1 name, got %v", names)
+	if len(compiled.names) != 1 {
+		t.Errorf("Expected 1 name, got %v", compiled.names)
 	}
 }
 
 func TestCommentBindName(t *testing.T) {
 	qs := `SELECT * FROM testtable -- where 1 = :name`
-	query, names, err := compileNamedQuery([]byte(qs), QUESTION)
+	compiled, err := compileNamedQuery([]byte(qs), QUESTION)
 	if err != nil {
 		t.Error("Didn't handle colons correctly when inside a string")
 	}
 	expected := "SELECT * FROM testtable -- where 1 = :name"
-	if query != expected {
-		t.Errorf("\nexpected: `%s`\ngot(D):      `%s`", expected, query)
+	if compiled.query != expected {
+		t.Errorf("\nexpected: `%s`\ngot(D):      `%s`", expected, compiled.query)
 	}
-	if len(names) != 0 {
-		t.Errorf("Expected no names, got %v", names)
+	if len(compiled.names) != 0 {
+		t.Errorf("Expected no names, got %v", compiled.names)
 	}
 }
 
@@ -344,13 +345,16 @@ func TestNamedQueries(t *testing.T) {
 func TestFixBounds(t *testing.T) {
 	table := []struct {
 		name, query, expect string
-		loop                int
+		loop, start, end    int
+		expectErr           error
 	}{
 		{
 			name:   `named syntax`,
 			query:  `INSERT INTO foo (a,b,c,d) VALUES (:name, :age, :first, :last)`,
 			expect: `INSERT INTO foo (a,b,c,d) VALUES (:name, :age, :first, :last),(:name, :age, :first, :last)`,
 			loop:   2,
+			start:  33,
+			end:    61,
 		},
 		{
 			name:   `mysql syntax`,
@@ -371,10 +375,11 @@ func TestFixBounds(t *testing.T) {
 			loop:   2,
 		},
 		{
-			name:   `not found test`,
-			query:  `INSERT INTO foo (a,b,c,d) (:name, :age, :first, :last)`,
-			expect: `INSERT INTO foo (a,b,c,d) (:name, :age, :first, :last)`,
-			loop:   2,
+			name:      `not found test`,
+			query:     `INSERT INTO foo (a,b,c,d) (:name, :age, :first, :last)`,
+			expect:    `INSERT INTO foo (a,b,c,d) (:name, :age, :first, :last)`,
+			expectErr: sql.ErrNoRows,
+			loop:      2,
 		},
 		{
 			name:   `found twice test`,
@@ -419,10 +424,11 @@ func TestFixBounds(t *testing.T) {
 			loop:   2,
 		},
 		{
-			name:   `missing closing bracket`,
-			query:  `INSERT INTO foo (a, b) VALUES (:a, YEAR(NOW())`,
-			expect: `INSERT INTO foo (a, b) VALUES (:a, YEAR(NOW())`,
-			loop:   2,
+			name:      `missing closing bracket`,
+			query:     `INSERT INTO foo (a, b) VALUES (:a, YEAR(NOW())`,
+			expect:    `INSERT INTO foo (a, b) VALUES (:a, YEAR(NOW())`,
+			expectErr: errors.New("missing closing bracket in VALUES"),
+			loop:      2,
 		},
 		{
 			name:   `table with "values" at the end`,
@@ -465,9 +471,25 @@ func TestFixBounds(t *testing.T) {
 
 	for _, tc := range table {
 		t.Run(tc.name, func(t *testing.T) {
-			res := fixBound(tc.query, tc.loop)
-			if res != tc.expect {
-				t.Errorf("mismatched results")
+			cq, err := compileNamedQuery([]byte(tc.query), NAMED)
+			if err != nil {
+				if tc.expectErr == nil {
+					t.Error(err)
+				}
+				if tc.expectErr != nil && err.Error() != tc.expectErr.Error() {
+					t.Errorf("mismatched error expected %s got %s", tc.expectErr, err)
+				}
+				return
+			}
+			fixBound(&cq, tc.loop)
+			if cq.query != tc.expect {
+				t.Errorf("mismatched results expected:\n%s\ngot:\n%s", tc.expect, cq.query)
+			}
+			if tc.start > 0 && tc.start != int(*cq.valuesStart) {
+				t.Errorf("mismatched start expected %d got %d", tc.start, *cq.valuesStart)
+			}
+			if tc.end > 0 && tc.end != int(*cq.valuesEnd) {
+				t.Errorf("mismatched end expected %d got %d", tc.end, *cq.valuesEnd)
 			}
 		})
 	}

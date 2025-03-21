@@ -10,3 +10,5 @@ require (
 )
 
 require filippo.io/edwards25519 v1.1.0 // indirect
+
+replace github.com/muir/sqltoken => github.com/vinovest/sqltoken v0.0.6-sqlx
