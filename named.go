@@ -331,9 +331,6 @@ type compiledQueryResult struct {
 	// the name of the parameter
 	names []string
 
-	// byte position in the query string, start of it including :
-	namePositions []uint32
-
 	// if set, the start position of the VALUES argument list not including () (end inclusive)
 	valuesStart *uint32
 	valuesEnd   *uint32
@@ -343,8 +340,7 @@ type compiledQueryResult struct {
 // a list of names.
 func compileNamedQuery(qs []byte, bindType int) (compiledQueryResult, error) {
 	r := compiledQueryResult{
-		names:         make([]string, 0, 10),
-		namePositions: make([]uint32, 0, 10),
+		names: make([]string, 0, 10),
 	}
 	curpos := uint32(0)
 	rebound := make([]byte, 0, len(qs))
@@ -384,7 +380,6 @@ func compileNamedQuery(qs []byte, bindType int) (compiledQueryResult, error) {
 			continue
 		}
 		r.names = append(r.names, token.Text[1:])
-		r.namePositions = append(r.namePositions, curpos)
 
 		newBound := ""
 		switch bindType {
