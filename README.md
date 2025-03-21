@@ -2,9 +2,11 @@
 
 [![Go Coverage](https://github.com/vinovest/sqlx/wiki/coverage.svg)](https://raw.githack.com/wiki/vinovest/sqlx/coverage.html) [![license](https://img.shields.io/badge/license-MIT-green/.svg?style=flat)](https://raw.githubusercontent.com/vinovest/sqlx/master/LICENSE)
 
-This is Vinovest's fork of https://github.com/jmoiron/sqlx.git for ongoing support. Sqlx hasn't been updated in a while
-and we use it extensively, so we're going to maintain this fork with some additional features and bug fixes.
-You're welcome to use and contribute to this fork!
+This is Vinovest's fork of https://github.com/jmoiron/sqlx.git for
+ongoing support. Sqlx hasn't been updated in a while and we use it
+extensively, so we're going to maintain this fork with some additional
+features and bug fixes.  You're welcome to use and contribute to this
+fork!
 
 sqlx is a library which provides a set of extensions on go's standard
 `database/sql` library.  The sqlx versions of `sql.DB`, `sql.TX`, `sql.Stmt`,
@@ -24,21 +26,40 @@ explains how to use `database/sql` along with sqlx.
 
 ## Recent Changes
 
-1.3.0:
+1.5.0:
 
-* `sqlx.DB.Connx(context.Context) *sqlx.Conn`
-* `sqlx.BindDriver(driverName, bindType)`
-* support for `[]map[string]interface{}` to do "batch" insertions
-* allocation & perf improvements for `sqlx.In`
+This is the first major release of sqlx from this fork in order to fix
+some issues which may cause some minor compatibility changes from
+previous versions, depending on how you use sqlx.
 
-DB.Connx returns an `sqlx.Conn`, which is an `sql.Conn`-alike consistent with
-sqlx's wrapping of other types.
+* VALUES bulk insertions were performed by a regex previously, now
+  sqlx will use a tokenizer to parse the query and reliably expand the
+  query for additional bound parameters. This fixes several bugs
+  around named parameters (e.g. `:name`). Where previously a colon had
+  to be escaped using an additional colon (resulting in `::name`), now
+  the query will work as expected.
 
-`BindDriver` allows users to control the bindvars that sqlx will use for drivers,
-and add new drivers at runtime.  This results in a very slight performance hit
-when resolving the driver into a bind type (~40ns per call), but it allows users
-to specify what bindtype their driver uses even when sqlx has not been updated
-to know about it by default.
+* Rebind parsing uses the tokenizer now as well, fixing double quoting
+  and unexpected behavior with colons in sql strings.
+
+* Get and GetContext will now error if the query returns more than one
+  row. Previously, it fetched the first row and ignored the
+  rest. Using Get on multiple rows is typically a mistake, and this
+  change makes the behavior more consistent and avoids potential bugs.
+
+* Fix for multiple sql statements ("select a from test; select b from
+  test2;") in a single call. Previously, sqlx cached the columns of
+  the first query and used them for all subsequent queries. This could
+  lead to incorrect results if the queries returned different
+  columns. Now, sqlx will reset the columns for each query on
+  NextResultSet.
+
+* Adds Queryable interface to unify DB and Tx.
+
+These fixes are the results of upstream contributions submitted in PRs
+to the original sqlx repository. Much thanks goes to everyone who
+contributed their time and effort to make sqlx better. These fixes
+vastly improve the usability of sqlx.
 
 ### Backwards Compatibility
 
