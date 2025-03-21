@@ -437,6 +437,18 @@ func TestFixBounds(t *testing.T) {
 			loop:   2,
 		},
 		{
+			name:   `table named "values"`,
+			query:  `INSERT INTO "values" (a, b) VALUES (:a, :b)`,
+			expect: `INSERT INTO "values" (a, b) VALUES (:a, :b),(:a, :b)`,
+			loop:   2,
+		},
+		{
+			name:   `select from values list`,
+			query:  `SELECT * FROM (VALUES (:a, :b))`,
+			expect: `SELECT * FROM (VALUES (:a, :b),(:a, :b))`,
+			loop:   2,
+		},
+		{
 			name: `multiline indented query`,
 			query: `INSERT INTO foo (
 		a,
