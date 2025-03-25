@@ -293,23 +293,27 @@ var namedParseConfigs = func() []sqltoken.Config {
 	pg.ColonWordIncludesUnicode = true
 	pg.NoticeDollarNumber = false
 	pg.NoticeQuestionMark = true
+	pg.SeparatePunctuation = true
 	configs[DOLLAR] = pg
 
 	ora := sqltoken.OracleConfig()
 	ora.ColonWordIncludesUnicode = true
 	ora.NoticeQuestionMark = true
+	ora.SeparatePunctuation = true
 	configs[NAMED] = ora
 
 	ssvr := sqltoken.SQLServerConfig()
 	ssvr.NoticeColonWord = true
 	ssvr.ColonWordIncludesUnicode = true
 	ssvr.NoticeAtWord = false
+	ssvr.SeparatePunctuation = true
 	configs[AT] = ssvr
 
 	mysql := sqltoken.MySQLConfig()
 	mysql.NoticeColonWord = true
 	mysql.ColonWordIncludesUnicode = true
 	mysql.NoticeQuestionMark = true
+	mysql.SeparatePunctuation = true
 	configs[QUESTION] = mysql
 	configs[UNKNOWN] = mysql
 	return configs
