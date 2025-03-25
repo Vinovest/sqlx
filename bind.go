@@ -37,16 +37,19 @@ var rebindConfigs = func() []sqltoken.Config {
 	pg := sqltoken.PostgreSQLConfig()
 	pg.NoticeQuestionMark = true
 	pg.NoticeDollarNumber = false
+	pg.SeparatePunctuation = true
 	configs[DOLLAR] = pg
 
 	ora := sqltoken.OracleConfig()
 	ora.NoticeColonWord = false
 	ora.NoticeQuestionMark = true
+	ora.SeparatePunctuation = true
 	configs[NAMED] = ora
 
 	ssvr := sqltoken.SQLServerConfig()
 	ssvr.NoticeAtWord = false
 	ssvr.NoticeQuestionMark = true
+	ssvr.SeparatePunctuation = true
 	configs[AT] = ssvr
 	return configs
 }()
