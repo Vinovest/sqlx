@@ -925,7 +925,7 @@ func TestUsageContext(t *testing.T) {
 		_, err = db.NamedExecContext(ctx, "INSERT INTO person (first_name, last_name, email) VALUES (:first, :last, :email)", map[string]interface{}{
 			"first": "Bin",
 			"last":  "Smuth",
-			"email": "bensmith@allblacks.nz",
+			"email": "bensmith@ex.co",
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -954,7 +954,7 @@ func TestUsageContext(t *testing.T) {
 
 		ben.FirstName = "Ben"
 		ben.LastName = "Smith"
-		ben.Email = "binsmuth@allblacks.nz"
+		ben.Email = "binsmuth@ex.co"
 
 		// Insert via a named query using the struct
 		_, err = db.NamedExecContext(ctx, "INSERT INTO person (first_name, last_name, email) VALUES (:first_name, :last_name, :email)", ben)
@@ -1111,6 +1111,14 @@ func TestUsageContext(t *testing.T) {
 				t.Errorf("expected single valid result to be `New York`, but got %s", val.String)
 			}
 		}
+
+		city, err := OneContext[string](ctx, db, "SELECT city FROM place where city is not null")
+		assert.NoError(t, err)
+		assert.Equal(t, "New York", city)
+
+		cities, err := ListContext[string](ctx, db, "SELECT city FROM place where city is not null")
+		assert.NoError(t, err)
+		assert.Equal(t, []string{"New York"}, cities)
 	})
 }
 
@@ -1411,6 +1419,82 @@ func TestConn(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+		}
+	})
+}
+
+// TestOneContext tests to ensure that One behaves correctly for
+// single row and multi row results.
+func TestOneContext(t *testing.T) {
+	var schema = Schema{
+		create: `CREATE TABLE tst (v integer);`,
+		drop:   `drop table tst;`,
+	}
+
+	RunWithSchema(schema, t, func(db *DB, t *testing.T, now string) {
+		for v := range 3 {
+			_, err := db.Exec(db.Rebind("INSERT INTO tst (v) VALUES (?)"), v)
+			if err != nil {
+				t.Error(err)
+			}
+		}
+
+		tests := []struct {
+			name string
+			val  int
+			err  bool
+		}{
+			{"multi-rows", 1, true},
+			{"single-row", 2, false},
+		}
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				_, err := OneContext[int](context.Background(), db, db.Rebind("SELECT v FROM tst WHERE v >= ?"), tc.val)
+				if tc.err {
+					if err == nil {
+						t.Error("expected error but got nil")
+					}
+				} else if err != nil {
+					t.Error("unexpected error:", err)
+				}
+			})
+		}
+	})
+}
+
+// TestListContext tests to ensure that List behaves correctly for
+// single row and multi row results.
+func TestListContext(t *testing.T) {
+	var schema = Schema{
+		create: `CREATE TABLE testlist (v integer);`,
+		drop:   `drop table testlist;`,
+	}
+
+	RunWithSchema(schema, t, func(db *DB, t *testing.T, now string) {
+		for v := range 4 {
+			_, err := db.Exec(db.Rebind("INSERT INTO testlist (v) VALUES (?)"), v)
+			require.NoError(t, err)
+		}
+
+		tests := []struct {
+			name     string
+			expected []int
+			val      int
+			err      bool
+		}{
+			{"multi-rows", []int{1, 2, 3}, 1, false},
+			{"single-row", []int{}, 22, false},
+		}
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				val, err := ListContext[int](context.Background(), db, db.Rebind("SELECT v FROM testlist WHERE v >= ?"), tc.val)
+				if tc.err {
+					require.Error(t, err)
+				} else if err != nil {
+					require.NoError(t, err)
+					assert.Equal(t, tc.expected, val, "expected %v, got %v", tc.expected, val)
+				}
+			})
 		}
 	})
 }

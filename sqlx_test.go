@@ -24,6 +24,8 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/vinovest/sqlx/reflectx"
 )
@@ -31,8 +33,8 @@ import (
 /* compile time checks that Db, Tx, Stmt (qStmt) implement expected interfaces */
 var _, _ Ext = &DB{}, &Tx{}
 var _, _ ColScanner = &Row{}, &Rows{}
-var _ Queryer = &qStmt{}
-var _ Execer = &qStmt{}
+var _ Queryer = &qStmt[any]{}
+var _ Execer = &qStmt[any]{}
 
 var TestPostgres = true
 var TestSqlite = true
@@ -1107,7 +1109,7 @@ func TestUsage(t *testing.T) {
 		_, err = db.NamedExec("INSERT INTO person (first_name, last_name, email) VALUES (:first, :last, :email)", map[string]interface{}{
 			"first": "Bin",
 			"last":  "Smuth",
-			"email": "bensmith@allblacks.nz",
+			"email": "bensmith@ex.co",
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -1136,7 +1138,7 @@ func TestUsage(t *testing.T) {
 
 		ben.FirstName = "Ben"
 		ben.LastName = "Smith"
-		ben.Email = "binsmuth@allblacks.nz"
+		ben.Email = "binsmuth@ex.co"
 
 		// Insert via a named query using the struct
 		_, err = db.NamedExec("INSERT INTO person (first_name, last_name, email) VALUES (:first_name, :last_name, :email)", ben)
@@ -1293,6 +1295,14 @@ func TestUsage(t *testing.T) {
 				t.Errorf("expected single valid result to be `New York`, but got %s", val.String)
 			}
 		}
+
+		city, err := One[string](db, "SELECT city FROM place where city is not null")
+		assert.NoError(t, err)
+		assert.Equal(t, "New York", city)
+
+		cities, err := List[string](db, "SELECT city FROM place where city is not null")
+		assert.NoError(t, err)
+		assert.Equal(t, []string{"New York"}, cities)
 	})
 }
 
@@ -1768,6 +1778,80 @@ func TestGet(t *testing.T) {
 	})
 }
 
+// TestOne tests to ensure that One behaves correctly for
+// single row and multi row results.
+func TestOne(t *testing.T) {
+	var schema = Schema{
+		create: `CREATE TABLE tst (v integer);`,
+		drop:   `drop table tst;`,
+	}
+
+	RunWithSchema(schema, t, func(db *DB, t *testing.T, now string) {
+		for v := range 3 {
+			_, err := db.Exec(db.Rebind("INSERT INTO tst (v) VALUES (?)"), v)
+			require.NoError(t, err)
+		}
+
+		tests := []struct {
+			name string
+			val  int
+			err  bool
+		}{
+			{"multi-rows", 1, true},
+			{"single-row", 2, false},
+		}
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				_, err := One[int](db, db.Rebind("SELECT v FROM tst WHERE v >= ?"), tc.val)
+				if tc.err {
+					if err == nil {
+						t.Error("expected error but got nil")
+					}
+				} else if err != nil {
+					t.Error("unexpected error:", err)
+				}
+			})
+		}
+	})
+}
+
+// TestList tests to ensure that List behaves correctly for
+// single row and multi row results.
+func TestList(t *testing.T) {
+	var schema = Schema{
+		create: `CREATE TABLE testlist (v integer);`,
+		drop:   `drop table testlist;`,
+	}
+
+	RunWithSchema(schema, t, func(db *DB, t *testing.T, now string) {
+		for v := range 4 {
+			_, err := db.Exec(db.Rebind("INSERT INTO testlist (v) VALUES (?)"), v)
+			require.NoError(t, err)
+		}
+
+		tests := []struct {
+			name     string
+			expected []int
+			val      int
+			err      bool
+		}{
+			{"multi-rows", []int{1, 2, 3}, 1, false},
+			{"single-row", []int{}, 22, false},
+		}
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				val, err := List[int](db, db.Rebind("SELECT v FROM testlist WHERE v >= ?"), tc.val)
+				if tc.err {
+					require.Error(t, err)
+				} else if err != nil {
+					require.NoError(t, err)
+					assert.Equal(t, tc.expected, val, "expected %v, got %v", tc.expected, val)
+				}
+			})
+		}
+	})
+}
+
 func BenchmarkBindStruct(b *testing.B) {
 	b.StopTimer()
 	q1 := `INSERT INTO foo (a, b, c, d) VALUES (:name, :age, :first, :last)`
@@ -1873,18 +1957,6 @@ func BenchmarkRebind(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		Rebind(DOLLAR, q1)
 		Rebind(DOLLAR, q2)
-	}
-}
-
-func BenchmarkRebindBuffer(b *testing.B) {
-	b.StopTimer()
-	q1 := `INSERT INTO foo (a, b, c, d, e, f, g, h, i) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-	q2 := `INSERT INTO foo (a, b, c) VALUES (?, ?, "foo"), ("Hi", ?, ?)`
-	b.StartTimer()
-
-	for i := 0; i < b.N; i++ {
-		rebindBuff(DOLLAR, q1)
-		rebindBuff(DOLLAR, q2)
 	}
 }
 
@@ -2099,6 +2171,67 @@ func TestQueryable(t *testing.T) {
 		if _, ok := queryableMethods[sharedMethodName]; !ok {
 			t.Errorf("Queryable does not include shared DB/Tx method: %s", sharedMethodName)
 		}
+	}
+}
+
+func TestAllRows(t *testing.T) {
+	type Simpleton struct {
+		FirstName   string `db:"first_name"`
+		LastName    string `db:"last_name"`
+		Unscannable []string
+	}
+
+	testCases := []struct {
+		name     string
+		sql      string
+		expected []Simpleton
+		wantErr  string
+	}{
+		{
+			name: "Two rows",
+			sql:  "SELECT first_name, last_name FROM person order by first_name",
+			expected: []Simpleton{
+				{FirstName: "Jason", LastName: "Moiron"},
+				{FirstName: "John", LastName: "Doe"},
+			},
+		},
+		{
+			name:     "No rows",
+			sql:      "SELECT first_name, last_name FROM person where first_name = 'nope'",
+			expected: []Simpleton{},
+		},
+		{
+			name:    "Has struct scan error",
+			sql:     "SELECT first_name, 2 as unscannable FROM person",
+			wantErr: "sql: Scan error on column index 1, name \"unscannable\": unsupported Scan, storing driver.Value type int64 into type *[]string",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			RunWithSchema(defaultSchema, t, func(db *DB, t *testing.T, now string) {
+				loadDefaultFixture(db, t)
+				rows, err := db.Queryx(tc.sql)
+				if err != nil {
+					t.Fatalf("Failed to query database: %v", err)
+				}
+
+				// Collect the results
+				results := make([]Simpleton, 0)
+				for person, err := range AllRows[Simpleton](rows) {
+					if tc.wantErr == "" {
+						require.NoError(t, err)
+					} else if err != nil && tc.wantErr != "" {
+						require.Equal(t, tc.wantErr, err.Error())
+					}
+					results = append(results, person)
+				}
+
+				if tc.wantErr == "" {
+					assert.Equal(t, tc.expected, results)
+				}
+			})
+		})
 	}
 }
 

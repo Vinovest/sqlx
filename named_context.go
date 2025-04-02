@@ -3,6 +3,7 @@ package sqlx
 import (
 	"context"
 	"database/sql"
+	"iter"
 )
 
 // A union interface of contextPreparer and binder, required to be able to
@@ -12,17 +13,22 @@ type namedPreparerContext interface {
 	binder
 }
 
-func prepareNamedContext(ctx context.Context, p namedPreparerContext, query string) (*NamedStmt, error) {
+// PrepareNamedContext returns a transaction-specific prepared statement from
+// an existing statement.
+//
+// The returned statement operates within the transaction and will be closed
+// when the transaction has been committed or rolled back (you do not need to close it).
+func PrepareNamedContext[T any](ctx context.Context, p namedPreparerContext, query string) (*GenericNamedStmt[T], error) {
 	bindType := BindType(p.DriverName())
 	compiled, err := compileNamedQuery([]byte(query), bindType)
 	if err != nil {
 		return nil, err
 	}
-	stmt, err := PreparexContext(ctx, p, compiled.query)
+	stmt, err := PreparexContext[T](ctx, p, compiled.query)
 	if err != nil {
 		return nil, err
 	}
-	return &NamedStmt{
+	return &GenericNamedStmt[T]{
 		QueryString: compiled.query,
 		Params:      compiled.names,
 		Stmt:        stmt,
@@ -31,7 +37,7 @@ func prepareNamedContext(ctx context.Context, p namedPreparerContext, query stri
 
 // ExecContext executes a named statement using the struct passed.
 // Any named placeholder parameters are replaced with fields from arg.
-func (n *NamedStmt) ExecContext(ctx context.Context, arg interface{}) (sql.Result, error) {
+func (n *GenericNamedStmt[T]) ExecContext(ctx context.Context, arg interface{}) (sql.Result, error) {
 	args, err := bindAnyArgs(n.Params, arg, n.Stmt.Mapper)
 	if err != nil {
 		return *new(sql.Result), err
@@ -41,7 +47,7 @@ func (n *NamedStmt) ExecContext(ctx context.Context, arg interface{}) (sql.Resul
 
 // QueryContext executes a named statement using the struct argument, returning rows.
 // Any named placeholder parameters are replaced with fields from arg.
-func (n *NamedStmt) QueryContext(ctx context.Context, arg interface{}) (*sql.Rows, error) {
+func (n *GenericNamedStmt[T]) QueryContext(ctx context.Context, arg interface{}) (*sql.Rows, error) {
 	args, err := bindAnyArgs(n.Params, arg, n.Stmt.Mapper)
 	if err != nil {
 		return nil, err
@@ -53,7 +59,7 @@ func (n *NamedStmt) QueryContext(ctx context.Context, arg interface{}) (*sql.Row
 // create a *sql.Row with an error condition pre-set for binding errors, sqlx
 // returns a *sqlx.Row instead.
 // Any named placeholder parameters are replaced with fields from arg.
-func (n *NamedStmt) QueryRowContext(ctx context.Context, arg interface{}) *Row {
+func (n *GenericNamedStmt[T]) QueryRowContext(ctx context.Context, arg interface{}) *Row {
 	args, err := bindAnyArgs(n.Params, arg, n.Stmt.Mapper)
 	if err != nil {
 		return &Row{err: err}
@@ -63,7 +69,7 @@ func (n *NamedStmt) QueryRowContext(ctx context.Context, arg interface{}) *Row {
 
 // MustExecContext execs a NamedStmt, panicing on error
 // Any named placeholder parameters are replaced with fields from arg.
-func (n *NamedStmt) MustExecContext(ctx context.Context, arg interface{}) sql.Result {
+func (n *GenericNamedStmt[T]) MustExecContext(ctx context.Context, arg interface{}) sql.Result {
 	res, err := n.ExecContext(ctx, arg)
 	if err != nil {
 		panic(err)
@@ -73,7 +79,7 @@ func (n *NamedStmt) MustExecContext(ctx context.Context, arg interface{}) sql.Re
 
 // QueryxContext using this NamedStmt
 // Any named placeholder parameters are replaced with fields from arg.
-func (n *NamedStmt) QueryxContext(ctx context.Context, arg interface{}) (*Rows, error) {
+func (n *GenericNamedStmt[T]) QueryxContext(ctx context.Context, arg interface{}) (*Rows, error) {
 	r, err := n.QueryContext(ctx, arg)
 	if err != nil {
 		return nil, err
@@ -84,13 +90,13 @@ func (n *NamedStmt) QueryxContext(ctx context.Context, arg interface{}) (*Rows, 
 // QueryRowxContext this NamedStmt.  Because of limitations with QueryRow, this is
 // an alias for QueryRow.
 // Any named placeholder parameters are replaced with fields from arg.
-func (n *NamedStmt) QueryRowxContext(ctx context.Context, arg interface{}) *Row {
+func (n *GenericNamedStmt[T]) QueryRowxContext(ctx context.Context, arg interface{}) *Row {
 	return n.QueryRowContext(ctx, arg)
 }
 
 // SelectContext using this NamedStmt
 // Any named placeholder parameters are replaced with fields from arg.
-func (n *NamedStmt) SelectContext(ctx context.Context, dest interface{}, arg interface{}) error {
+func (n *GenericNamedStmt[T]) SelectContext(ctx context.Context, dest interface{}, arg interface{}) error {
 	rows, err := n.QueryxContext(ctx, arg)
 	if err != nil {
 		return err
@@ -102,9 +108,42 @@ func (n *NamedStmt) SelectContext(ctx context.Context, dest interface{}, arg int
 
 // GetContext using this NamedStmt
 // Any named placeholder parameters are replaced with fields from arg.
-func (n *NamedStmt) GetContext(ctx context.Context, dest interface{}, arg interface{}) error {
+func (n *GenericNamedStmt[T]) GetContext(ctx context.Context, dest interface{}, arg interface{}) error {
 	r := n.QueryRowxContext(ctx, arg)
 	return r.scanAny(dest, false)
+}
+
+// OneContext get a single row using this NamedStmt
+// Any named placeholder parameters are replaced with fields from arg.
+func (n *GenericNamedStmt[T]) OneContext(ctx context.Context, arg interface{}) (T, error) {
+	r := n.QueryRowxContext(ctx, arg)
+	var dest T
+	err := r.scanAny(&dest, false)
+	return dest, err
+}
+
+// AllContext performs a query using the NamedStmt and returns all rows for use with range.
+func (n *GenericNamedStmt[T]) AllContext(ctx context.Context, arg interface{}) iter.Seq2[T, error] {
+	rows, err := n.QueryxContext(ctx, arg)
+	if err != nil {
+		panic(err)
+	}
+
+	return func(yield func(T, error) bool) {
+		defer func(rows *Rows) {
+			_ = rows.Close()
+		}(rows)
+		for rows.Next() {
+			if ctx.Err() != nil {
+				return
+			}
+			var dest T
+			err := rows.StructScan(&dest)
+			if !yield(dest, err) {
+				return
+			}
+		}
+	}
 }
 
 // NamedQueryContext binds a named query and then runs Query on the result using the

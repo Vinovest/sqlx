@@ -15,6 +15,7 @@ import (
 	"bytes"
 	"database/sql"
 	"fmt"
+	"iter"
 	"reflect"
 	"strconv"
 	"strings"
@@ -24,22 +25,27 @@ import (
 	"github.com/vinovest/sqlx/reflectx"
 )
 
-// NamedStmt is a prepared statement that executes named queries.  Prepare it
-// how you would execute a NamedQuery, but pass in a struct or map when executing.
-type NamedStmt struct {
+// GenericNamedStmt is a prepared statement that executes named queries.  Prepare it
+// how you would execute a NamedQuery, but pass in a struct or map when executing. This
+// is a generic version of NamedStmt. To preserve user code compatibility.
+type GenericNamedStmt[T any] struct {
 	Params      []string
 	QueryString string
-	Stmt        *Stmt
+	Stmt        *GenericStmt[T]
 }
 
+// NamedStmt is a prepared statement that executes named queries.  Prepare it
+// how you would execute a NamedQuery, but pass in a struct or map when executing.
+type NamedStmt = GenericNamedStmt[any]
+
 // Close closes the named statement.
-func (n *NamedStmt) Close() error {
+func (n *GenericNamedStmt[T]) Close() error {
 	return n.Stmt.Close()
 }
 
 // Exec executes a named statement using the struct passed.
 // Any named placeholder parameters are replaced with fields from arg.
-func (n *NamedStmt) Exec(arg interface{}) (sql.Result, error) {
+func (n *GenericNamedStmt[T]) Exec(arg interface{}) (sql.Result, error) {
 	args, err := bindAnyArgs(n.Params, arg, n.Stmt.Mapper)
 	if err != nil {
 		return *new(sql.Result), err
@@ -49,7 +55,7 @@ func (n *NamedStmt) Exec(arg interface{}) (sql.Result, error) {
 
 // Query executes a named statement using the struct argument, returning rows.
 // Any named placeholder parameters are replaced with fields from arg.
-func (n *NamedStmt) Query(arg interface{}) (*sql.Rows, error) {
+func (n *GenericNamedStmt[T]) Query(arg interface{}) (*sql.Rows, error) {
 	args, err := bindAnyArgs(n.Params, arg, n.Stmt.Mapper)
 	if err != nil {
 		return nil, err
@@ -61,7 +67,7 @@ func (n *NamedStmt) Query(arg interface{}) (*sql.Rows, error) {
 // create a *sql.Row with an error condition pre-set for binding errors, sqlx
 // returns a *sqlx.Row instead.
 // Any named placeholder parameters are replaced with fields from arg.
-func (n *NamedStmt) QueryRow(arg interface{}) *Row {
+func (n *GenericNamedStmt[T]) QueryRow(arg interface{}) *Row {
 	args, err := bindAnyArgs(n.Params, arg, n.Stmt.Mapper)
 	if err != nil {
 		return &Row{err: err}
@@ -71,7 +77,7 @@ func (n *NamedStmt) QueryRow(arg interface{}) *Row {
 
 // MustExec execs a NamedStmt, panicing on error
 // Any named placeholder parameters are replaced with fields from arg.
-func (n *NamedStmt) MustExec(arg interface{}) sql.Result {
+func (n *GenericNamedStmt[T]) MustExec(arg interface{}) sql.Result {
 	res, err := n.Exec(arg)
 	if err != nil {
 		panic(err)
@@ -81,7 +87,7 @@ func (n *NamedStmt) MustExec(arg interface{}) sql.Result {
 
 // Queryx using this NamedStmt
 // Any named placeholder parameters are replaced with fields from arg.
-func (n *NamedStmt) Queryx(arg interface{}) (*Rows, error) {
+func (n *GenericNamedStmt[T]) Queryx(arg interface{}) (*Rows, error) {
 	r, err := n.Query(arg)
 	if err != nil {
 		return nil, err
@@ -92,13 +98,13 @@ func (n *NamedStmt) Queryx(arg interface{}) (*Rows, error) {
 // QueryRowx this NamedStmt.  Because of limitations with QueryRow, this is
 // an alias for QueryRow.
 // Any named placeholder parameters are replaced with fields from arg.
-func (n *NamedStmt) QueryRowx(arg interface{}) *Row {
+func (n *GenericNamedStmt[T]) QueryRowx(arg interface{}) *Row {
 	return n.QueryRow(arg)
 }
 
 // Select using this NamedStmt
 // Any named placeholder parameters are replaced with fields from arg.
-func (n *NamedStmt) Select(dest interface{}, arg interface{}) error {
+func (n *GenericNamedStmt[T]) Select(dest interface{}, arg interface{}) error {
 	rows, err := n.Queryx(arg)
 	if err != nil {
 		return err
@@ -108,16 +114,75 @@ func (n *NamedStmt) Select(dest interface{}, arg interface{}) error {
 	return scanAll(rows, dest, false)
 }
 
+// List performs a query using the statement and returns all rows as a slice of T.
+func (n *GenericNamedStmt[T]) List(arg interface{}) ([]T, error) {
+	var dests []T
+	err := n.Select(&dests, arg)
+	return dests, err
+}
+
 // Get using this NamedStmt
 // Any named placeholder parameters are replaced with fields from arg.
-func (n *NamedStmt) Get(dest interface{}, arg interface{}) error {
+func (n *GenericNamedStmt[T]) Get(dest interface{}, arg interface{}) error {
 	r := n.QueryRowx(arg)
 	return r.scanAny(dest, false)
 }
 
-// Unsafe creates an unsafe version of the NamedStmt
-func (n *NamedStmt) Unsafe() *NamedStmt {
-	r := &NamedStmt{Params: n.Params, Stmt: n.Stmt, QueryString: n.QueryString}
+// One get a single row using this NamedStmt
+// Any named placeholder parameters are replaced with fields from arg.
+func (n *GenericNamedStmt[T]) One(arg interface{}) (T, error) {
+	r := n.QueryRowx(arg)
+	var dest T
+	err := r.scanAny(&dest, false)
+	return dest, err
+}
+
+// All performs a query using the GenericNamedStmt and returns all rows for use with range.
+func (n *GenericNamedStmt[T]) All(arg interface{}) iter.Seq2[T, error] {
+	rows, err := n.Queryx(arg)
+	if err != nil {
+		panic(err)
+	}
+
+	return func(yield func(T, error) bool) {
+		defer func(rows *Rows) {
+			_ = rows.Close()
+		}(rows)
+		for rows.Next() {
+			var dest T
+			err := rows.StructScan(&dest)
+			if !yield(dest, err) {
+				return
+			}
+		}
+	}
+}
+
+// Prepare returns a transaction-specific prepared statement from
+// an existing statement.
+//
+// The returned statement operates within the transaction and will be closed
+// when the transaction has been committed or rolled back (you do not need to close it).
+func (n *GenericNamedStmt[T]) Prepare(ndb Queryable) *GenericNamedStmt[T] {
+	tx, ok := ndb.(*Tx)
+	if !ok {
+		// not needed
+		return n
+	}
+	return &GenericNamedStmt[T]{
+		Params:      n.Params,
+		QueryString: n.QueryString,
+		Stmt: &GenericStmt[T]{
+			Stmt:   tx.Stmt(n.Stmt.Stmt),
+			unsafe: n.Stmt.unsafe,
+			Mapper: n.Stmt.Mapper,
+		},
+	}
+}
+
+// Unsafe creates an unsafe version of the GenericNamedStmt
+func (n *GenericNamedStmt[T]) Unsafe() *GenericNamedStmt[T] {
+	r := &GenericNamedStmt[T]{Params: n.Params, Stmt: n.Stmt, QueryString: n.QueryString}
 	r.Stmt.unsafe = true
 	return r
 }
@@ -129,17 +194,17 @@ type namedPreparer interface {
 	binder
 }
 
-func prepareNamed(p namedPreparer, query string) (*NamedStmt, error) {
+func PrepareNamed[T any](p namedPreparer, query string) (*GenericNamedStmt[T], error) {
 	bindType := BindType(p.DriverName())
 	compiled, err := compileNamedQuery([]byte(query), bindType)
 	if err != nil {
 		return nil, err
 	}
-	stmt, err := Preparex(p, compiled.query)
+	stmt, err := Preparex[T](p, compiled.query)
 	if err != nil {
 		return nil, err
 	}
-	return &NamedStmt{
+	return &GenericNamedStmt[T]{
 		QueryString: compiled.query,
 		Params:      compiled.names,
 		Stmt:        stmt,

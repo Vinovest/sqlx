@@ -1,7 +1,6 @@
 package sqlx
 
 import (
-	"bytes"
 	"database/sql/driver"
 	"errors"
 	"reflect"
@@ -104,31 +103,6 @@ func Rebind(bindType int, query string) string {
 		rqb = strconv.AppendInt(rqb, int64(j), 10)
 	}
 	return string(rqb)
-}
-
-// Experimental implementation of Rebind which uses a bytes.Buffer.  The code is
-// much simpler and should be more resistant to odd unicode, but it is twice as
-// slow.  Kept here for benchmarking purposes and to possibly replace Rebind if
-// problems arise with its somewhat naive handling of unicode.
-func rebindBuff(bindType int, query string) string {
-	if bindType != DOLLAR {
-		return query
-	}
-
-	b := make([]byte, 0, len(query))
-	rqb := bytes.NewBuffer(b)
-	j := 1
-	for _, r := range query {
-		if r == '?' {
-			rqb.WriteRune('$')
-			rqb.WriteString(strconv.Itoa(j))
-			j++
-		} else {
-			rqb.WriteRune(r)
-		}
-	}
-
-	return rqb.String()
 }
 
 func asSliceForIn(i interface{}) (v reflect.Value, ok bool) {
