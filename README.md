@@ -26,6 +26,10 @@ explains how to use `database/sql` along with sqlx.
 
 ## Recent Changes
 
+* fix for sql in-list parsing that will properly ignore question marks
+  in comments and strings. This frequently caused a confusing error
+  ("number of bindVars exceeds arguments").
+
 1.5.0:
 
 This is the first major release of sqlx from this fork in order to fix

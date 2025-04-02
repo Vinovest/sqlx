@@ -212,45 +212,52 @@ func In(query string, args ...interface{}) (string, []interface{}, error) {
 	var buf strings.Builder
 	buf.Grow(len(query) + len(", ?")*flatArgsCount)
 
-	var arg, offset int
-
-	for i := strings.IndexByte(query[offset:], '?'); i != -1; i = strings.IndexByte(query[offset:], '?') {
-		if arg >= len(meta) {
-			// if an argument wasn't passed, lets return an error;  this is
-			// not actually how database/sql Exec/Query works, but since we are
-			// creating an argument list programmatically, we want to be able
-			// to catch these programmer errors earlier.
-			return "", nil, errors.New("number of bindVars exceeds arguments")
+	var arg int
+	config := rebindConfigs[DOLLAR] // specific config doesn't matter, we just need the tokenizer to return QuestionMarks
+	tokens := sqltoken.Tokenize(query, config)
+	inIn := false // found `in (`
+	for pos, token := range tokens {
+		if !inIn && token.Type == sqltoken.Punctuation && token.Text == "(" {
+			// look backwards to see if the previous word is "in"
+			for i := pos - 1; i >= 0; i-- {
+				if tokens[i].Type == sqltoken.Word {
+					inIn = strings.ToLower(tokens[i].Text) == "in"
+					break
+				}
+			}
 		}
+		if token.Type == sqltoken.QuestionMark {
+			if arg >= len(meta) {
+				// if an argument wasn't passed, lets return an error;  this is
+				// not actually how database/sql Exec/Query works, but since we are
+				// creating an argument list programmatically, we want to be able
+				// to catch these programmer errors earlier.
+				return "", nil, errors.New("number of bindVars exceeds arguments")
+			}
 
-		argMeta := meta[arg]
-		arg++
+			argMeta := meta[arg]
+			arg++
 
-		// not a slice, continue.
-		// our questionmark will either be written before the next expansion
-		// of a slice or after the loop when writing the rest of the query
-		if argMeta.length == 0 {
-			offset = offset + i + 1
-			newArgs = append(newArgs, argMeta.i)
-			continue
+			// not an in-list
+			if !inIn {
+				newArgs = append(newArgs, argMeta.i)
+				buf.WriteString(token.Text)
+				continue
+			}
+
+			buf.WriteString("?")
+			for si := 1; si < argMeta.length; si++ {
+				buf.WriteString(", ?")
+			}
+
+			newArgs = appendReflectSlice(newArgs, argMeta.v, argMeta.length)
+		} else if inIn && token.Type == sqltoken.Punctuation && token.Text == ")" {
+			inIn = false
+			buf.WriteString(token.Text)
+		} else {
+			buf.WriteString(token.Text)
 		}
-
-		// write everything up to and including our ? character
-		buf.WriteString(query[:offset+i+1])
-
-		for si := 1; si < argMeta.length; si++ {
-			buf.WriteString(", ?")
-		}
-
-		newArgs = appendReflectSlice(newArgs, argMeta.v, argMeta.length)
-
-		// slice the query and reset the offset. this avoids some bookkeeping for
-		// the write after the loop
-		query = query[offset+i+1:]
-		offset = 0
 	}
-
-	buf.WriteString(query)
 
 	if arg < len(meta) {
 		return "", nil, errors.New("number of bindVars less than number arguments")
