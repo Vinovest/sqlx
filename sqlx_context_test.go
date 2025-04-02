@@ -21,6 +21,8 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/vinovest/sqlx/reflectx"
 )
@@ -1164,75 +1166,107 @@ func TestEmbeddedMapsContext(t *testing.T) {
 }
 
 func TestInContext(t *testing.T) {
-	// some quite normal situations
 	type tr struct {
-		q    string
-		args []interface{}
-		c    int
+		name      string
+		q         string
+		expected  string
+		args      []interface{}
+		flatCount int
+		wantErr   bool
+		err       string
 	}
 	tests := []tr{
-		{"SELECT * FROM foo WHERE x = ? AND v in (?) AND y = ?",
-			[]interface{}{"foo", []int{0, 5, 7, 2, 9}, "bar"},
-			7},
-		{"SELECT * FROM foo WHERE x in (?)",
-			[]interface{}{[]int{1, 2, 3, 4, 5, 6, 7, 8}},
-			8},
+		{
+			name:      "additional arguments",
+			q:         "SELECT * FROM foo WHERE x = ? AND v in (?) AND y = ?",
+			expected:  "SELECT * FROM foo WHERE x = ? AND v in (?, ?, ?, ?, ?) AND y = ?",
+			args:      []interface{}{"foo", []int{0, 5, 7, 2, 9}, "bar"},
+			flatCount: 7,
+		},
+		{
+			name:      "a single list",
+			q:         "SELECT * FROM foo WHERE x in (?)",
+			expected:  "SELECT * FROM foo WHERE x in (?, ?, ?, ?, ?, ?, ?, ?)",
+			args:      []interface{}{[]int{1, 2, 3, 4, 5, 6, 7, 8}},
+			flatCount: 8,
+		},
+		{
+			name: "question mark in comment",
+			q: `SELECT *
+-- comment in question?
+FROM foo WHERE x in (?)`,
+			expected: `SELECT *
+-- comment in question?
+FROM foo WHERE x in (?)`,
+			args:      []interface{}{[]int{1}},
+			flatCount: 1,
+		},
+		{
+			name:      "question mark in value",
+			q:         `SELECT *, 'something?' as something FROM foo WHERE x in (?)`,
+			expected:  `SELECT *, 'something?' as something FROM foo WHERE x in (?)`,
+			args:      []interface{}{[]int{1}},
+			flatCount: 1,
+		},
+		{
+			name:      "literal values",
+			q:         `SELECT *, 'something?' as something FROM foo WHERE x in ('123?', ?)`,
+			expected:  `SELECT *, 'something?' as something FROM foo WHERE x in ('123?', ?, ?)`,
+			args:      []interface{}{[]int{1, 2}},
+			flatCount: 2,
+		},
+		{
+			// too many bindVars, but no slices, so short circuits parsing
+			// i'm not sure if this is the right behavior;  this query/arg combo
+			// might not work, but we shouldn't parse if we don't need to
+			name:      "too many bindVars but no slices",
+			q:         "SELECT * FROM foo WHERE x = ? AND y = ?",
+			expected:  `SELECT * FROM foo WHERE x = ? AND y = ?`,
+			args:      []interface{}{"foo", "bar", "baz"},
+			flatCount: 3,
+		},
+		{
+			name: "too many bindvars",
+			q:    "SELECT * FROM foo WHERE x = ? and y = ?",
+			// 		"SELECT * FROM foo WHERE x = ? and y = ?",
+			args:    []interface{}{"foo", []int{1, 2, 3}, "bar"},
+			wantErr: true,
+			err:     "number of bindVars less than number arguments",
+		},
+		{
+			name:    "empty slice, should return error before parse",
+			q:       "SELECT * FROM foo WHERE x = ?",
+			args:    []interface{}{[]int{}},
+			wantErr: true,
+			err:     "empty slice passed to 'in' query",
+		},
+		{
+			name:    "too few bindvars, should return an error",
+			q:       "SELECT * FROM foo WHERE x = ? AND y in (?)",
+			args:    []interface{}{[]int{1, 2, 3}},
+			wantErr: true,
+			err:     "number of bindVars exceeds arguments",
+		},
 	}
 	for _, test := range tests {
-		q, a, err := In(test.q, test.args...)
-		if err != nil {
-			t.Error(err)
-		}
-		if len(a) != test.c {
-			t.Errorf("Expected %d args, but got %d (%+v)", test.c, len(a), a)
-		}
-		if strings.Count(q, "?") != test.c {
-			t.Errorf("Expected %d bindVars, got %d", test.c, strings.Count(q, "?"))
-		}
+		t.Run(test.name, func(t *testing.T) {
+			q, args, err := In(test.q, test.args...)
+			if test.wantErr {
+				require.Error(t, err)
+				assert.Equal(t, test.err, err.Error())
+				return
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, test.expected, q)
+				assert.Equal(t, test.flatCount, len(args))
+			}
+		})
 	}
+}
 
-	// too many bindVars, but no slices, so short circuits parsing
-	// i'm not sure if this is the right behavior;  this query/arg combo
-	// might not work, but we shouldn't parse if we don't need to
-	{
-		orig := "SELECT * FROM foo WHERE x = ? AND y = ?"
-		q, a, err := In(orig, "foo", "bar", "baz")
-		if err != nil {
-			t.Error(err)
-		}
-		if len(a) != 3 {
-			t.Errorf("Expected 3 args, but got %d (%+v)", len(a), a)
-		}
-		if q != orig {
-			t.Error("Expected unchanged query.")
-		}
-	}
-
-	tests = []tr{
-		// too many bindvars;  slice present so should return error during parse
-		{"SELECT * FROM foo WHERE x = ? and y = ?",
-			[]interface{}{"foo", []int{1, 2, 3}, "bar"},
-			0},
-		// empty slice, should return error before parse
-		{"SELECT * FROM foo WHERE x = ?",
-			[]interface{}{[]int{}},
-			0},
-		// too *few* bindvars, should return an error
-		{"SELECT * FROM foo WHERE x = ? AND y in (?)",
-			[]interface{}{[]int{1, 2, 3}},
-			0},
-	}
-	for _, test := range tests {
-		_, _, err := In(test.q, test.args...)
-		if err == nil {
-			t.Error("Expected an error, but got nil.")
-		}
-	}
+func TestInContextSchema(t *testing.T) {
 	RunWithSchemaContext(context.Background(), defaultSchema, t, func(ctx context.Context, db *DB, t *testing.T) {
 		loadDefaultFixtureContext(ctx, db, t)
-		// tx.MustExecContext(ctx, tx.Rebind("INSERT INTO place (country, city, telcode) VALUES (?, ?, ?)"), "United States", "New York", "1")
-		// tx.MustExecContext(ctx, tx.Rebind("INSERT INTO place (country, telcode) VALUES (?, ?)"), "Hong Kong", "852")
-		// tx.MustExecContext(ctx, tx.Rebind("INSERT INTO place (country, telcode) VALUES (?, ?)"), "Singapore", "65")
 		telcodes := []int{852, 65}
 		q := "SELECT * FROM place WHERE telcode IN(?) ORDER BY telcode"
 		query, args, err := In(q, telcodes)
