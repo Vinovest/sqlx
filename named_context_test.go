@@ -4,6 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNamedContextQueries(t *testing.T) {
@@ -131,4 +134,64 @@ func TestNamedContextQueries(t *testing.T) {
 		}
 
 	})
+}
+
+func TestAllRows_NamedContextStmt(t *testing.T) {
+	type Simpleton struct {
+		FirstName   string `db:"first_name"`
+		LastName    string `db:"last_name"`
+		Unscannable []string
+	}
+
+	testCases := []struct {
+		name     string
+		sql      string
+		expected []Simpleton
+		wantErr  string
+	}{
+		{
+			name: "Two rows",
+			sql:  "SELECT first_name, last_name FROM person where first_name = :first_name",
+			expected: []Simpleton{
+				{FirstName: "Jason", LastName: "Moiron"},
+			},
+		},
+		{
+			name:     "No rows",
+			sql:      "SELECT first_name, last_name FROM person where first_name = :first_name and last_name = 'nope'",
+			expected: []Simpleton{},
+		},
+		{
+			name:    "Has struct scan error",
+			sql:     "SELECT first_name, 2 as unscannable FROM person",
+			wantErr: "sql: Scan error on column index 1, name \"unscannable\": unsupported Scan, storing driver.Value type int64 into type *[]string",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			RunWithSchema(defaultSchema, t, func(db *DB, t *testing.T, now string) {
+				loadDefaultFixture(db, t)
+				stmt, err := PrepareNamedContext[Simpleton](context.Background(), db, tc.sql)
+				if err != nil {
+					t.Fatalf("Failed to query database: %v", err)
+				}
+
+				// Collect the results
+				results := make([]Simpleton, 0)
+				for person, err := range stmt.AllContext(context.Background(), Simpleton{FirstName: "Jason"}) {
+					if tc.wantErr == "" {
+						require.NoError(t, err)
+					} else if err != nil && tc.wantErr != "" {
+						require.Equal(t, tc.wantErr, err.Error())
+					}
+					results = append(results, person)
+				}
+
+				if tc.wantErr == "" {
+					assert.Equal(t, tc.expected, results)
+				}
+			})
+		})
+	}
 }
