@@ -6,6 +6,7 @@ import (
 	"database/sql/driver"
 	"errors"
 	"fmt"
+	"iter"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -131,10 +132,10 @@ func isUnsafe(i interface{}) bool {
 		return v.unsafe
 	case *Stmt:
 		return v.unsafe
-	case qStmt:
-		return v.unsafe
-	case *qStmt:
-		return v.unsafe
+	case qStmt[any]:
+		return v.Stmt.unsafe
+	case *qStmt[any]:
+		return v.Stmt.unsafe
 	case DB:
 		return v.unsafe
 	case *DB:
@@ -414,12 +415,12 @@ func (db *DB) MustExec(query string, args ...interface{}) sql.Result {
 
 // Preparex returns an sqlx.Stmt instead of a sql.Stmt
 func (db *DB) Preparex(query string) (*Stmt, error) {
-	return Preparex(db, query)
+	return preparexStmt(db, query)
 }
 
 // PrepareNamed returns an sqlx.NamedStmt
 func (db *DB) PrepareNamed(query string) (*NamedStmt, error) {
-	return prepareNamed(db, query)
+	return PrepareNamed[any](db, query)
 }
 
 // Conn is a wrapper around sql.Conn with extra functionality
@@ -509,12 +510,12 @@ func (tx *Tx) MustExec(query string, args ...interface{}) sql.Result {
 
 // Preparex  a statement within a transaction.
 func (tx *Tx) Preparex(query string) (*Stmt, error) {
-	return Preparex(tx, query)
+	return preparexStmt(tx, query)
 }
 
 // Stmtx returns a version of the prepared statement which runs within a transaction.  Provided
 // stmt can be either *sql.Stmt or *sqlx.Stmt.
-func (tx *Tx) Stmtx(stmt interface{}) *Stmt {
+func (tx *Tx) Stmtx(stmt interface{}) *GenericStmt[any] {
 	var s *sql.Stmt
 	switch v := stmt.(type) {
 	case Stmt:
@@ -526,7 +527,7 @@ func (tx *Tx) Stmtx(stmt interface{}) *Stmt {
 	default:
 		panic(fmt.Sprintf("non-statement type %v passed to Stmtx", reflect.ValueOf(stmt).Type()))
 	}
-	return &Stmt{Stmt: tx.Stmt(s), Mapper: tx.Mapper}
+	return &GenericStmt[any]{Stmt: tx.Stmt(s), Mapper: tx.Mapper}
 }
 
 // NamedStmt returns a version of the prepared statement which runs within a transaction.
@@ -540,65 +541,118 @@ func (tx *Tx) NamedStmt(stmt *NamedStmt) *NamedStmt {
 
 // PrepareNamed returns an sqlx.NamedStmt
 func (tx *Tx) PrepareNamed(query string) (*NamedStmt, error) {
-	return prepareNamed(tx, query)
+	return PrepareNamed[any](tx, query)
 }
 
-// Stmt is an sqlx wrapper around sql.Stmt with extra functionality
-type Stmt struct {
+// GenericStmt is an sqlx wrapper around sql.Stmt with extra functionality
+type GenericStmt[T any] struct {
 	*sql.Stmt
 	unsafe bool
 	Mapper *reflectx.Mapper
 }
 
+type Stmt = GenericStmt[any]
+
 // Unsafe returns a version of Stmt which will silently succeed to scan when
 // columns in the SQL result have no fields in the destination struct.
-func (s *Stmt) Unsafe() *Stmt {
-	return &Stmt{Stmt: s.Stmt, unsafe: true, Mapper: s.Mapper}
+func (s *GenericStmt[T]) Unsafe() *GenericStmt[T] {
+	return &GenericStmt[T]{Stmt: s.Stmt, unsafe: true, Mapper: s.Mapper}
 }
 
 // Select using the prepared statement.
 // Any placeholder parameters are replaced with supplied args.
-func (s *Stmt) Select(dest interface{}, args ...interface{}) error {
-	return Select(&qStmt{s}, dest, "", args...)
+func (s *GenericStmt[T]) Select(dest interface{}, args ...interface{}) error {
+	return Select(&qStmt[T]{s}, dest, "", args...)
 }
 
 // Get using the prepared statement.
 // Any placeholder parameters are replaced with supplied args.
 // An error is returned if the result set is empty or contains more than one row.
-func (s *Stmt) Get(dest interface{}, args ...interface{}) error {
-	return Get(&qStmt{s}, dest, "", args...)
+func (s *GenericStmt[T]) Get(dest interface{}, args ...interface{}) error {
+	return Get(&qStmt[T]{s}, dest, "", args...)
 }
 
 // MustExec (panic) using this statement.  Note that the query portion of the error
 // output will be blank, as Stmt does not expose its query.
 // Any placeholder parameters are replaced with supplied args.
-func (s *Stmt) MustExec(args ...interface{}) sql.Result {
-	return MustExec(&qStmt{s}, "", args...)
+func (s *GenericStmt[T]) MustExec(args ...interface{}) sql.Result {
+	return MustExec(&qStmt[T]{s}, "", args...)
 }
 
 // QueryRowx using this statement.
 // Any placeholder parameters are replaced with supplied args.
-func (s *Stmt) QueryRowx(args ...interface{}) *Row {
-	qs := &qStmt{s}
+func (s *GenericStmt[T]) QueryRowx(args ...interface{}) *Row {
+	qs := &qStmt[T]{s}
 	return qs.QueryRowx("", args...)
 }
 
 // Queryx using this statement.
 // Any placeholder parameters are replaced with supplied args.
-func (s *Stmt) Queryx(args ...interface{}) (*Rows, error) {
-	qs := &qStmt{s}
+func (s *GenericStmt[T]) Queryx(args ...interface{}) (*Rows, error) {
+	qs := &qStmt[T]{s}
 	return qs.Queryx("", args...)
+}
+
+// One get one row using the prepared statement.
+// Any placeholder parameters are replaced with supplied args.
+// An error is returned if the result set is empty or contains more than one row.
+func (s *GenericStmt[T]) One(args ...interface{}) (T, error) {
+	var dest T
+	err := Get(&qStmt[T]{s}, &dest, "", args...)
+	return dest, err
+}
+
+// All performs a query using the NamedStmt and returns all rows for use with range.
+func (s *GenericStmt[T]) All(args ...interface{}) iter.Seq2[T, error] {
+	rows, err := s.Queryx(args...)
+	if err != nil {
+		panic(err)
+	}
+
+	return func(yield func(T, error) bool) {
+		defer func(rows *Rows) {
+			_ = rows.Close()
+		}(rows)
+		for rows.Next() {
+			var dest T
+			err := rows.StructScan(&dest)
+			if !yield(dest, err) {
+				return
+			}
+		}
+	}
+}
+
+// List performs a query using the statement and returns all rows as a slice of T.
+func (s *GenericStmt[T]) List(args ...interface{}) ([]T, error) {
+	var dests []T
+	err := s.Select(&dests, args...)
+	return dests, err
+}
+
+// Prepare returns a transaction-specific prepared statement from
+// an existing statement.
+//
+// The returned statement operates within the transaction and will be closed
+// when the transaction has been committed or rolled back.
+func (s *GenericStmt[T]) Prepare(ndb Queryable) *GenericStmt[T] {
+	tx, ok := ndb.(*Tx)
+	if !ok {
+		// not needed
+		return s
+	}
+	return &GenericStmt[T]{Stmt: tx.Stmt(s.Stmt), unsafe: s.unsafe, Mapper: s.Mapper}
 }
 
 // qStmt is an unexposed wrapper which lets you use a Stmt as a Queryer & Execer by
 // implementing those interfaces and ignoring the `query` argument.
-type qStmt struct{ *Stmt }
+type qStmt[T any] struct{ Stmt *GenericStmt[T] }
 
-func (q *qStmt) Query(query string, args ...interface{}) (*sql.Rows, error) {
+func (q *qStmt[T]) Query(query string, args ...interface{}) (*sql.Rows, error) {
 	return q.Stmt.Query(args...)
 }
 
-func (q *qStmt) Queryx(query string, args ...interface{}) (*Rows, error) {
+func (q *qStmt[T]) Queryx(query string, args ...interface{}) (*Rows, error) {
 	r, err := q.Stmt.Query(args...)
 	if err != nil {
 		return nil, err
@@ -606,12 +660,12 @@ func (q *qStmt) Queryx(query string, args ...interface{}) (*Rows, error) {
 	return &Rows{Rows: r, unsafe: q.Stmt.unsafe, Mapper: q.Stmt.Mapper}, err
 }
 
-func (q *qStmt) QueryRowx(query string, args ...interface{}) *Row {
+func (q *qStmt[T]) QueryRowx(query string, args ...interface{}) *Row {
 	rows, err := q.Stmt.Query(args...)
 	return &Row{rows: rows, err: err, unsafe: q.Stmt.unsafe, Mapper: q.Stmt.Mapper}
 }
 
-func (q *qStmt) Exec(query string, args ...interface{}) (sql.Result, error) {
+func (q *qStmt[T]) Exec(query string, args ...interface{}) (sql.Result, error) {
 	return q.Stmt.Exec(args...)
 }
 
@@ -689,6 +743,23 @@ func (r *Rows) NextResultSet() bool {
 	return true
 }
 
+// AllRows returns an iter.Seq2 for ranging over rows. The second result is an error object which may be non-nil due to scanning errors. Calling code should check error in the loop.
+func AllRows[T any](rows *Rows) iter.Seq2[T, error] {
+	return func(yield func(T, error) bool) {
+		defer func(rows *Rows) {
+			_ = rows.Close()
+		}(rows)
+
+		for rows.Next() {
+			var dest T
+			err := rows.StructScan(&dest)
+			if !yield(dest, err) {
+				return
+			}
+		}
+	}
+}
+
 // Connect to a database and verify with a ping.
 func Connect(driverName, dataSourceName string) (*DB, error) {
 	db, err := Open(driverName, dataSourceName)
@@ -713,7 +784,16 @@ func MustConnect(driverName, dataSourceName string) *DB {
 }
 
 // Preparex prepares a statement.
-func Preparex(p Preparer, query string) (*Stmt, error) {
+func Preparex[T any](p Preparer, query string) (*GenericStmt[T], error) {
+	s, err := p.Prepare(query)
+	if err != nil {
+		return nil, err
+	}
+	return &GenericStmt[T]{Stmt: s, unsafe: isUnsafe(p), Mapper: mapperFor(p)}, err
+}
+
+// preparexStmt returns a Stmt, a workaround for type aliases and generics until Go 1.24
+func preparexStmt(p Preparer, query string) (*Stmt, error) {
 	s, err := p.Prepare(query)
 	if err != nil {
 		return nil, err
@@ -744,6 +824,25 @@ func Select(q Queryer, dest interface{}, query string, args ...interface{}) erro
 func Get(q Queryer, dest interface{}, query string, args ...interface{}) error {
 	r := q.QueryRowx(query, args...)
 	return r.scanAny(dest, false)
+}
+
+// One does a QueryRow using the provided Queryer, and scans the resulting row.
+// If dest is scannable, the result must only have one column.  Otherwise,
+// StructScan is used.  Get will return sql.ErrNoRows like row.Scan would.
+// Any placeholder parameters are replaced with supplied args.
+// An error is returned if the result set is empty or contains more than one row.
+func One[T any](q Queryer, query string, args ...interface{}) (T, error) {
+	r := q.QueryRowx(query, args...)
+	var dest T
+	err := r.scanAny(&dest, false)
+	return dest, err
+}
+
+// List executes a query using the provided Queryer, and returns a slice of T for each row.
+func List[T any](q Queryer, query string, args ...interface{}) ([]T, error) {
+	var dest []T
+	err := Select(q, &dest, query, args...)
+	return dest, err
 }
 
 // LoadFile exec's every statement in a file (as a single call to Exec).

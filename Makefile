@@ -28,3 +28,11 @@ test-race:
 update-dependencies:
 	go get -u -t -v ./...
 	go mod tidy
+
+test-examples:
+	for dir in $$(find examples -type d); do \
+		if [ -f $$dir/main.go ]; then \
+			echo "Building and running $$dir/main.go"; \
+			go build -o $$dir/main $$dir/main.go && $$dir/main; \
+		fi \
+	done
