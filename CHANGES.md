@@ -1,5 +1,22 @@
 # Changes
 
+## 1.6.0:
+
+* Set Go version to 1.23.
+
+* Added `AllRows` package function and `All` on statement types to
+  range over rows and automatically close the result set.
+
+* Added functions `One` and `List` for querying with
+  generics. Modifications to types Stmt and NamedStmt to support
+  generics may cause some small compatibility changes that should be
+  quick to resolve with a search and replace. Both are now type
+  aliases to attempt to minimize the impact of this change.
+
+* fix for sql in-list parsing that will properly ignore question marks
+  in comments and strings. This frequently caused a confusing error
+  ("number of bindVars exceeds arguments").
+
 ## 1.5.0:
 
 This is the first major release of sqlx from this fork in order to fix

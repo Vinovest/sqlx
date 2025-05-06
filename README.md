@@ -27,7 +27,9 @@ In addition to the [godoc API documentation](http://godoc.org/github.com/jmoiron
 there is also some [user documentation](http://jmoiron.github.io/sqlx/) that
 explains how to use `database/sql` along with sqlx.
 
-## Recent Changes
+## Changes compared to the original sqlx
+
+1.6.0:
 
 * Set Go version to 1.23.
 
@@ -45,10 +47,6 @@ explains how to use `database/sql` along with sqlx.
   ("number of bindVars exceeds arguments").
 
 1.5.0:
-
-This is the first major release of sqlx from this fork in order to fix
-some issues which may cause some minor compatibility changes from
-previous versions, depending on how you use sqlx.
 
 * VALUES bulk insertions were performed by a regex previously, now
   sqlx will use a tokenizer to parse the query and reliably expand the
@@ -73,11 +71,6 @@ previous versions, depending on how you use sqlx.
   NextResultSet.
 
 * Adds Queryable interface to unify DB and Tx.
-
-These fixes are the results of upstream contributions submitted in PRs
-to the original sqlx repository. Much thanks goes to everyone who
-contributed their time and effort to make sqlx better. These fixes
-vastly improve the usability of sqlx.
 
 ### Backwards Compatibility
 
