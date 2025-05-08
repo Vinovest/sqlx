@@ -29,6 +29,12 @@ explains how to use `database/sql` along with sqlx.
 
 ## Changes compared to the original sqlx
 
+* Improved "unsafe" mode at the DB level. "Unsafe" isn't all that
+  unsafe, it really is just an additional check when scanning rows. If
+  there's a column in the row result that can't be mapped to the
+  struct, sqlx will return a "missing destination name" error. A new
+  WithUnsafe option for Connect and Open allows you to turn this off.
+
 1.6.0:
 
 * Set Go version to 1.23.
