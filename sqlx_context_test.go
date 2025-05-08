@@ -94,109 +94,147 @@ func TestMissingNamesContextContext(t *testing.T) {
 			// AddedAt time.Time `db:"added_at"`
 		}
 
-		// test Select first
-		pps := []PersonPlus{}
-		// pps lacks added_at destination
-		err := db.SelectContext(ctx, &pps, "SELECT * FROM person")
-		if err == nil {
-			t.Error("Expected missing name from Select to fail, but it did not.")
+		{
+			undb := db.Unsafe()
+			assert.False(t, getOptions(db).allowMissingFields(), "expected db to still be safe")
+			assert.True(t, getOptions(undb).allowMissingFields(), "expected db to still be unsafe after Unsafe()")
 		}
 
-		// test Get
-		pp := PersonPlus{}
-		err = db.GetContext(ctx, &pp, "SELECT * FROM person LIMIT 1")
-		if err == nil {
-			t.Error("Expected missing name Get to fail, but it did not.")
+		{
+			// test Select first
+			pps := []PersonPlus{}
+			// pps lacks added_at destination
+			err := db.SelectContext(ctx, &pps, "SELECT * FROM person")
+			if err == nil {
+				t.Error("Expected missing name from Select to fail, but it did not.")
+			}
 		}
 
-		// test naked StructScan
-		pps = []PersonPlus{}
-		rows, err := db.QueryContext(ctx, "SELECT * FROM person LIMIT 1")
-		if err != nil {
-			t.Fatal(err)
-		}
-		rows.Next()
-		err = StructScan(rows, &pps)
-		if err == nil {
-			t.Error("Expected missing name in StructScan to fail, but it did not.")
-		}
-		rows.Close()
-
-		// now try various things with unsafe set.
-		db = db.Unsafe()
-		pps = []PersonPlus{}
-		err = db.SelectContext(ctx, &pps, "SELECT * FROM person")
-		if err != nil {
-			t.Error(err)
+		{
+			// test Get
+			pp := PersonPlus{}
+			err := db.GetContext(ctx, &pp, "SELECT * FROM person LIMIT 1")
+			if err == nil {
+				t.Error("Expected missing name Get to fail, but it did not.")
+			}
 		}
 
-		// test Get
-		pp = PersonPlus{}
-		err = db.GetContext(ctx, &pp, "SELECT * FROM person LIMIT 1")
-		if err != nil {
-			t.Error(err)
+		{
+			// test naked StructScan
+			pps := []PersonPlus{}
+			rows, err := db.QueryContext(ctx, "SELECT * FROM person LIMIT 1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			rows.Next()
+			err = StructScan(rows, &pps)
+			if err == nil {
+				t.Error("Expected missing name in StructScan to fail, but it did not.")
+			}
+			rows.Close()
 		}
 
-		// test naked StructScan
-		pps = []PersonPlus{}
-		rowsx, err := db.QueryxContext(ctx, "SELECT * FROM person LIMIT 1")
-		if err != nil {
-			t.Fatal(err)
-		}
-		rowsx.Next()
-		err = StructScan(rowsx, &pps)
-		if err != nil {
-			t.Error(err)
-		}
-		rowsx.Close()
-
-		// test Named stmt
-		if !isUnsafe(db) {
-			t.Error("Expected db to be unsafe, but it isn't")
-		}
-		nstmt, err := db.PrepareNamedContext(ctx, `SELECT * FROM person WHERE first_name != :name`)
-		if err != nil {
-			t.Fatal(err)
-		}
-		// its internal stmt should be marked unsafe
-		if !nstmt.Stmt.unsafe {
-			t.Error("expected NamedStmt to be unsafe but its underlying stmt did not inherit safety")
-		}
-		pps = []PersonPlus{}
-		err = nstmt.SelectContext(ctx, &pps, map[string]interface{}{"name": "Jason"})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(pps) != 1 {
-			t.Errorf("Expected 1 person back, got %d", len(pps))
+		{
+			// now try various things with unsafe set.
+			db := db.Unsafe()
+			pps := []PersonPlus{}
+			err := db.SelectContext(ctx, &pps, "SELECT * FROM person")
+			require.NoError(t, err)
 		}
 
-		// test it with a safe db
-		db.unsafe = false
-		if isUnsafe(db) {
-			t.Error("expected db to be safe but it isn't")
-		}
-		nstmt, err = db.PrepareNamedContext(ctx, `SELECT * FROM person WHERE first_name != :name`)
-		if err != nil {
-			t.Fatal(err)
-		}
-		// it should be safe
-		if isUnsafe(nstmt) {
-			t.Error("NamedStmt did not inherit safety")
-		}
-		nstmt.Unsafe()
-		if !isUnsafe(nstmt) {
-			t.Error("expected newly unsafed NamedStmt to be unsafe")
-		}
-		pps = []PersonPlus{}
-		err = nstmt.SelectContext(ctx, &pps, map[string]interface{}{"name": "Jason"})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(pps) != 1 {
-			t.Errorf("Expected 1 person back, got %d", len(pps))
+		{
+			// test Get
+			db := db.Unsafe()
+			pp := PersonPlus{}
+			err := db.GetContext(ctx, &pp, "SELECT * FROM person LIMIT 1")
+			require.NoError(t, err)
 		}
 
+		{
+			// test naked StructScan
+			db := db.Unsafe()
+			pps := []PersonPlus{}
+			rowsx, err := db.QueryxContext(ctx, "SELECT * FROM person LIMIT 1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			rowsx.Next()
+			err = StructScan(rowsx, &pps)
+			if err != nil {
+				t.Error(err)
+			}
+			rowsx.Close()
+		}
+
+		{
+			// test Named stmt
+			db := db.Unsafe()
+			nstmt, err := db.PrepareNamedContext(ctx, `SELECT * FROM person WHERE first_name != :name`)
+			require.NoError(t, err)
+			// its internal stmt should be marked unsafe
+			if !getOptions(nstmt.Stmt).allowMissingFields() {
+				t.Error("expected NamedStmt to be unsafe but its underlying stmt did not inherit safety")
+			}
+			pps := []PersonPlus{}
+			err = nstmt.Select(&pps, map[string]interface{}{"name": "Jason"})
+			require.NoError(t, err)
+			if len(pps) != 1 {
+				t.Errorf("Expected 1 person back, got %d", len(pps))
+			}
+		}
+
+		{
+			// test it with a safe db
+			nstmt, err := db.PrepareNamedContext(ctx, `SELECT * FROM person WHERE first_name != :name`)
+			require.NoError(t, err)
+			// it should be safe
+			if getOptions(nstmt).allowMissingFields() {
+				t.Error("NamedStmt did not inherit safety")
+			}
+			nstmt = nstmt.Unsafe()
+			if !getOptions(nstmt).allowMissingFields() {
+				t.Error("expected newly unsafed NamedStmt to be unsafe")
+			}
+			pps := []PersonPlus{}
+			err = nstmt.Select(&pps, map[string]interface{}{"name": "Jason"})
+			require.NoError(t, err)
+			if len(pps) != 1 {
+				t.Errorf("Expected 1 person back, got %d", len(pps))
+			}
+		}
+
+		{
+			// generic version, stmt
+			db := db.Unsafe()
+			rebound := db.Rebind(`SELECT * FROM person WHERE first_name != ?`)
+			ps, err := PreparexContext[PersonPlus](ctx, db, rebound)
+			require.NoError(t, err)
+			// it should be unsafe
+			if !getOptions(ps).allowMissingFields() {
+				t.Error("NamedStmt did not inherit unsafe")
+			}
+			pps, err := ps.List("Jason")
+			require.NoError(t, err)
+			if len(pps) != 1 {
+				t.Errorf("Expected 1 person back, got %d", len(pps))
+			}
+		}
+
+		{
+			// generic version
+			db := db.Unsafe()
+			ps, err := PrepareNamedContext[PersonPlus](ctx, db, `SELECT * FROM person WHERE first_name != :name`)
+			require.NoError(t, err)
+			// it should be unsafe
+			if !getOptions(ps).allowMissingFields() {
+				t.Error("NamedStmt did not inherit unsafe")
+			}
+			pps, err := ps.List(map[string]interface{}{"name": "Jason"})
+			require.NoError(t, err)
+			if len(pps) != 1 {
+				t.Errorf("Expected 1 person back, got %d", len(pps))
+			}
+		}
 	})
 }
 

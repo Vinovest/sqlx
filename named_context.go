@@ -84,7 +84,7 @@ func (n *GenericNamedStmt[T]) QueryxContext(ctx context.Context, arg interface{}
 	if err != nil {
 		return nil, err
 	}
-	return &Rows{Rows: r, Mapper: n.Stmt.Mapper, unsafe: isUnsafe(n)}, err
+	return &Rows{Rows: r, Mapper: n.Stmt.Mapper, options: n.Stmt.options}, err
 }
 
 // QueryRowxContext this NamedStmt.  Because of limitations with QueryRow, this is

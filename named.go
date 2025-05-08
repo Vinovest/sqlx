@@ -92,7 +92,7 @@ func (n *GenericNamedStmt[T]) Queryx(arg interface{}) (*Rows, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Rows{Rows: r, Mapper: n.Stmt.Mapper, unsafe: isUnsafe(n)}, err
+	return &Rows{Rows: r, Mapper: n.Stmt.Mapper, options: n.Stmt.options}, err
 }
 
 // QueryRowx this NamedStmt.  Because of limitations with QueryRow, this is
@@ -173,18 +173,23 @@ func (n *GenericNamedStmt[T]) Prepare(ndb Queryable) *GenericNamedStmt[T] {
 		Params:      n.Params,
 		QueryString: n.QueryString,
 		Stmt: &GenericStmt[T]{
-			Stmt:   tx.Stmt(n.Stmt.Stmt),
-			unsafe: n.Stmt.unsafe,
-			Mapper: n.Stmt.Mapper,
+			Stmt:    tx.Stmt(n.Stmt.Stmt),
+			options: n.Stmt.options,
+			Mapper:  n.Stmt.Mapper,
 		},
 	}
 }
 
 // Unsafe creates an unsafe version of the GenericNamedStmt
 func (n *GenericNamedStmt[T]) Unsafe() *GenericNamedStmt[T] {
-	r := &GenericNamedStmt[T]{Params: n.Params, Stmt: n.Stmt, QueryString: n.QueryString}
-	r.Stmt.unsafe = true
+	stmt := n.Stmt.Unsafe()
+	r := &GenericNamedStmt[T]{Params: n.Params, Stmt: stmt, QueryString: n.QueryString}
 	return r
+}
+
+// getOptions work around type assertions with generics
+func (n *GenericNamedStmt[T]) getOptions() *dbOptions {
+	return n.Stmt.options
 }
 
 // A union interface of preparer and binder, required to be able to prepare

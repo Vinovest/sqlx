@@ -113,41 +113,38 @@ type Preparer interface {
 	Prepare(query string) (*sql.Stmt, error)
 }
 
-// determine if any of our extensions are unsafe
-func isUnsafe(i interface{}) bool {
+// work around for type assertion with generics
+type optionalContainer interface {
+	getOptions() *dbOptions
+}
+
+// getOptions get options for the interface
+func getOptions(i interface{}) *dbOptions {
 	switch v := i.(type) {
-	case Row:
-		return v.unsafe
-	case *Row:
-		return v.unsafe
-	case Rows:
-		return v.unsafe
-	case *Rows:
-		return v.unsafe
-	case NamedStmt:
-		return v.Stmt.unsafe
-	case *NamedStmt:
-		return v.Stmt.unsafe
-	case Stmt:
-		return v.unsafe
-	case *Stmt:
-		return v.unsafe
-	case qStmt[any]:
-		return v.Stmt.unsafe
-	case *qStmt[any]:
-		return v.Stmt.unsafe
 	case DB:
-		return v.unsafe
+		return v.options
 	case *DB:
-		return v.unsafe
+		return v.options
 	case Tx:
-		return v.unsafe
+		return v.options
 	case *Tx:
-		return v.unsafe
-	case sql.Rows, *sql.Rows:
-		return false
+		return v.options
+	case Conn:
+		return v.options
+	case *Conn:
+		return v.options
+	case *Row:
+		return v.options
+	case Row:
+		return v.options
+	case *Rows:
+		return v.options
+	case Rows:
+		return v.options
+	case optionalContainer:
+		return v.getOptions()
 	default:
-		return false
+		return &dbOptions{}
 	}
 }
 
@@ -174,10 +171,10 @@ var _valuerInterface = reflect.TypeOf((*driver.Valuer)(nil)).Elem()
 // Row is a reimplementation of sql.Row in order to gain access to the underlying
 // sql.Rows.Columns() data, necessary for StructScan.
 type Row struct {
-	err    error
-	unsafe bool
-	rows   *sql.Rows
-	Mapper *reflectx.Mapper
+	err     error
+	options *dbOptions
+	rows    *sql.Rows
+	Mapper  *reflectx.Mapper
 }
 
 // Scan is a fixed implementation of sql.Row.Scan, which does not discard the
@@ -282,21 +279,62 @@ type Queryable interface {
 var _ Queryable = (*DB)(nil)
 var _ Queryable = (*Tx)(nil)
 
+type dbOptions struct {
+	unsafe bool
+}
+
+func (o *dbOptions) allowMissingFields() bool {
+	return o.unsafe
+}
+
+// WithUnsafe in unsafe mode sqlx will do its best to continue despite scan issues like missing fields
+func WithUnsafe() func(*dbOptions) {
+	return func(opts *dbOptions) {
+		opts.unsafe = true
+	}
+}
+
+// WithSetUnsafe in unsafe mode sqlx will do its best to continue despite scan issues like missing fields
+func WithSetUnsafe(v bool) func(*dbOptions) {
+	return func(opts *dbOptions) {
+		opts.unsafe = v
+	}
+}
+
 // DB is a wrapper around sql.DB which keeps track of the driverName upon Open,
 // used mostly to automatically bind named queries using the right bindvars.
 type DB struct {
 	*sql.DB
 	driverName string
-	unsafe     bool
 	Mapper     *reflectx.Mapper
+	options    *dbOptions
 }
 
-// NewDb returns a new sqlx DB wrapper for a pre-existing *sql.DB.  The
+// NewDb returns a new sqlx DB wrapper for a pre-existing *sql.DB. The
 // driverName of the original database is required for named query support.
 //
+// This function now accepts functional options as variadic arguments to configure
+// the database instance. Functional options are functions that modify the internal
+// dbOptions struct. For example:
+//
+//	db := sqlx.NewDb(existingDB, "mysql", sqlx.WithUnsafe())
+//
+// The above example enables unsafe mode, which allows sqlx to continue despite
+// scan issues like missing fields. You can also use WithSetUnsafe to explicitly
+// set the unsafe mode:
+//
+//	db := sqlx.NewDb(existingDB, "mysql", sqlx.WithSetUnsafe(true))
+//
+// You can pass multiple functional options to configure other aspects of the
+// database as needed.
+//
 //lint:ignore ST1003 changing this would break the package interface.
-func NewDb(db *sql.DB, driverName string) *DB {
-	return &DB{DB: db, driverName: driverName, Mapper: mapper()}
+func NewDb(db *sql.DB, driverName string, args ...func(*dbOptions)) *DB {
+	opts := &dbOptions{}
+	for _, arg := range args {
+		arg(opts)
+	}
+	return &DB{DB: db, driverName: driverName, Mapper: mapper(), options: opts}
 }
 
 // DriverName returns the driverName passed to the Open function for this DB.
@@ -305,17 +343,21 @@ func (db *DB) DriverName() string {
 }
 
 // Open is the same as sql.Open, but returns an *sqlx.DB instead.
-func Open(driverName, dataSourceName string) (*DB, error) {
+func Open(driverName, dataSourceName string, args ...func(*dbOptions)) (*DB, error) {
+	opts := &dbOptions{}
+	for _, arg := range args {
+		arg(opts)
+	}
 	db, err := sql.Open(driverName, dataSourceName)
 	if err != nil {
 		return nil, err
 	}
-	return &DB{DB: db, driverName: driverName, Mapper: mapper()}, err
+	return &DB{DB: db, driverName: driverName, Mapper: mapper(), options: opts}, err
 }
 
 // MustOpen is the same as sql.Open, but returns an *sqlx.DB instead and panics on error.
-func MustOpen(driverName, dataSourceName string) *DB {
-	db, err := Open(driverName, dataSourceName)
+func MustOpen(driverName, dataSourceName string, args ...func(*dbOptions)) *DB {
+	db, err := Open(driverName, dataSourceName, args...)
 	if err != nil {
 		panic(err)
 	}
@@ -338,7 +380,9 @@ func (db *DB) Rebind(query string) string {
 // sqlx.Stmt and sqlx.Tx which are created from this DB will inherit its
 // safety behavior.
 func (db *DB) Unsafe() *DB {
-	return &DB{DB: db.DB, driverName: db.driverName, unsafe: true, Mapper: db.Mapper}
+	opts := *db.options
+	opts.unsafe = true
+	return &DB{DB: db.DB, driverName: db.driverName, Mapper: db.Mapper, options: &opts}
 }
 
 // BindNamed binds a query using the DB driver's bindvar type.
@@ -387,7 +431,7 @@ func (db *DB) Beginx() (*Tx, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Tx{Tx: tx, driverName: db.driverName, unsafe: db.unsafe, Mapper: db.Mapper}, err
+	return &Tx{Tx: tx, driverName: db.driverName, options: db.options, Mapper: db.Mapper}, err
 }
 
 // Queryx queries the database and returns an *sqlx.Rows.
@@ -397,14 +441,14 @@ func (db *DB) Queryx(query string, args ...interface{}) (*Rows, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Rows{Rows: r, unsafe: db.unsafe, Mapper: db.Mapper}, err
+	return &Rows{Rows: r, options: db.options, Mapper: db.Mapper}, err
 }
 
 // QueryRowx queries the database and returns an *sqlx.Row.
 // Any placeholder parameters are replaced with supplied args.
 func (db *DB) QueryRowx(query string, args ...interface{}) *Row {
 	rows, err := db.DB.Query(query, args...)
-	return &Row{rows: rows, err: err, unsafe: db.unsafe, Mapper: db.Mapper}
+	return &Row{rows: rows, err: err, options: db.options, Mapper: db.Mapper}
 }
 
 // MustExec (panic) runs MustExec using this database.
@@ -427,7 +471,7 @@ func (db *DB) PrepareNamed(query string) (*NamedStmt, error) {
 type Conn struct {
 	*sql.Conn
 	driverName string
-	unsafe     bool
+	options    *dbOptions
 	Mapper     *reflectx.Mapper
 }
 
@@ -435,7 +479,7 @@ type Conn struct {
 type Tx struct {
 	*sql.Tx
 	driverName string
-	unsafe     bool
+	options    *dbOptions
 	Mapper     *reflectx.Mapper
 }
 
@@ -452,7 +496,9 @@ func (tx *Tx) Rebind(query string) string {
 // Unsafe returns a version of Tx which will silently succeed to scan when
 // columns in the SQL result have no fields in the destination struct.
 func (tx *Tx) Unsafe() *Tx {
-	return &Tx{Tx: tx.Tx, driverName: tx.driverName, unsafe: true, Mapper: tx.Mapper}
+	opts := *tx.options
+	opts.unsafe = true
+	return &Tx{Tx: tx.Tx, driverName: tx.driverName, options: &opts, Mapper: tx.Mapper}
 }
 
 // BindNamed binds a query within a transaction's bindvar type.
@@ -485,14 +531,14 @@ func (tx *Tx) Queryx(query string, args ...interface{}) (*Rows, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Rows{Rows: r, unsafe: tx.unsafe, Mapper: tx.Mapper}, err
+	return &Rows{Rows: r, options: tx.options, Mapper: tx.Mapper}, err
 }
 
 // QueryRowx within a transaction.
 // Any placeholder parameters are replaced with supplied args.
 func (tx *Tx) QueryRowx(query string, args ...interface{}) *Row {
 	rows, err := tx.Tx.Query(query, args...)
-	return &Row{rows: rows, err: err, unsafe: tx.unsafe, Mapper: tx.Mapper}
+	return &Row{rows: rows, err: err, options: tx.options, Mapper: tx.Mapper}
 }
 
 // Get within a transaction.
@@ -527,7 +573,7 @@ func (tx *Tx) Stmtx(stmt interface{}) *GenericStmt[any] {
 	default:
 		panic(fmt.Sprintf("non-statement type %v passed to Stmtx", reflect.ValueOf(stmt).Type()))
 	}
-	return &GenericStmt[any]{Stmt: tx.Stmt(s), Mapper: tx.Mapper}
+	return &GenericStmt[any]{Stmt: tx.Stmt(s), Mapper: tx.Mapper, options: tx.options}
 }
 
 // NamedStmt returns a version of the prepared statement which runs within a transaction.
@@ -547,8 +593,8 @@ func (tx *Tx) PrepareNamed(query string) (*NamedStmt, error) {
 // GenericStmt is an sqlx wrapper around sql.Stmt with extra functionality
 type GenericStmt[T any] struct {
 	*sql.Stmt
-	unsafe bool
-	Mapper *reflectx.Mapper
+	options *dbOptions
+	Mapper  *reflectx.Mapper
 }
 
 type Stmt = GenericStmt[any]
@@ -556,7 +602,9 @@ type Stmt = GenericStmt[any]
 // Unsafe returns a version of Stmt which will silently succeed to scan when
 // columns in the SQL result have no fields in the destination struct.
 func (s *GenericStmt[T]) Unsafe() *GenericStmt[T] {
-	return &GenericStmt[T]{Stmt: s.Stmt, unsafe: true, Mapper: s.Mapper}
+	opts := *s.options
+	opts.unsafe = true
+	return &GenericStmt[T]{Stmt: s.Stmt, options: &opts, Mapper: s.Mapper}
 }
 
 // Select using the prepared statement.
@@ -641,12 +689,22 @@ func (s *GenericStmt[T]) Prepare(ndb Queryable) *GenericStmt[T] {
 		// not needed
 		return s
 	}
-	return &GenericStmt[T]{Stmt: tx.Stmt(s.Stmt), unsafe: s.unsafe, Mapper: s.Mapper}
+	return &GenericStmt[T]{Stmt: tx.Stmt(s.Stmt), options: s.options, Mapper: s.Mapper}
+}
+
+// getOptions work around type assertions with generics
+func (n *GenericStmt[T]) getOptions() *dbOptions {
+	return n.options
 }
 
 // qStmt is an unexposed wrapper which lets you use a Stmt as a Queryer & Execer by
 // implementing those interfaces and ignoring the `query` argument.
 type qStmt[T any] struct{ Stmt *GenericStmt[T] }
+
+// getOptions work around type assertions with generics
+func (q *qStmt[T]) getOptions() *dbOptions {
+	return q.Stmt.options
+}
 
 func (q *qStmt[T]) Query(query string, args ...interface{}) (*sql.Rows, error) {
 	return q.Stmt.Query(args...)
@@ -657,12 +715,12 @@ func (q *qStmt[T]) Queryx(query string, args ...interface{}) (*Rows, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Rows{Rows: r, unsafe: q.Stmt.unsafe, Mapper: q.Stmt.Mapper}, err
+	return &Rows{Rows: r, options: q.Stmt.options, Mapper: q.Stmt.Mapper}, err
 }
 
 func (q *qStmt[T]) QueryRowx(query string, args ...interface{}) *Row {
 	rows, err := q.Stmt.Query(args...)
-	return &Row{rows: rows, err: err, unsafe: q.Stmt.unsafe, Mapper: q.Stmt.Mapper}
+	return &Row{rows: rows, err: err, options: q.Stmt.options, Mapper: q.Stmt.Mapper}
 }
 
 func (q *qStmt[T]) Exec(query string, args ...interface{}) (sql.Result, error) {
@@ -673,8 +731,8 @@ func (q *qStmt[T]) Exec(query string, args ...interface{}) (sql.Result, error) {
 // during a looped StructScan
 type Rows struct {
 	*sql.Rows
-	unsafe bool
-	Mapper *reflectx.Mapper
+	options *dbOptions
+	Mapper  *reflectx.Mapper
 	// these fields cache memory use for a rows during iteration w/ structScan
 	started bool
 	fields  [][]int
@@ -713,9 +771,11 @@ func (r *Rows) StructScan(dest interface{}) error {
 		m := r.Mapper
 
 		r.fields = m.TraversalsByName(v.Type(), columns)
-		// if we are not unsafe and are missing fields, return an error
-		if f, err := missingFields(r.fields); err != nil && !r.unsafe {
-			return fmt.Errorf("missing destination name %s in %T", columns[f], dest)
+		if !getOptions(r).allowMissingFields() {
+			// if we are not unsafe and are missing fields, return an error
+			if f, err := missingFields(r.fields); err != nil {
+				return fmt.Errorf("missing destination name %s in %T", columns[f], dest)
+			}
 		}
 		r.values = make([]interface{}, len(columns))
 		r.started = true
@@ -761,8 +821,8 @@ func AllRows[T any](rows *Rows) iter.Seq2[T, error] {
 }
 
 // Connect to a database and verify with a ping.
-func Connect(driverName, dataSourceName string) (*DB, error) {
-	db, err := Open(driverName, dataSourceName)
+func Connect(driverName, dataSourceName string, args ...func(*dbOptions)) (*DB, error) {
+	db, err := Open(driverName, dataSourceName, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -775,8 +835,8 @@ func Connect(driverName, dataSourceName string) (*DB, error) {
 }
 
 // MustConnect connects to a database and panics on error.
-func MustConnect(driverName, dataSourceName string) *DB {
-	db, err := Connect(driverName, dataSourceName)
+func MustConnect(driverName, dataSourceName string, args ...func(*dbOptions)) *DB {
+	db, err := Connect(driverName, dataSourceName, args...)
 	if err != nil {
 		panic(err)
 	}
@@ -789,7 +849,7 @@ func Preparex[T any](p Preparer, query string) (*GenericStmt[T], error) {
 	if err != nil {
 		return nil, err
 	}
-	return &GenericStmt[T]{Stmt: s, unsafe: isUnsafe(p), Mapper: mapperFor(p)}, err
+	return &GenericStmt[T]{Stmt: s, options: getOptions(p), Mapper: mapperFor(p)}, err
 }
 
 // preparexStmt returns a Stmt, a workaround for type aliases and generics until Go 1.24
@@ -798,7 +858,7 @@ func preparexStmt(p Preparer, query string) (*Stmt, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Stmt{Stmt: s, unsafe: isUnsafe(p), Mapper: mapperFor(p)}, err
+	return &Stmt{Stmt: s, options: getOptions(p), Mapper: mapperFor(p)}, err
 }
 
 // Select executes a query using the provided Queryer, and StructScans each row
@@ -930,9 +990,11 @@ func (r *Row) scanAny(dest interface{}, structOnly bool) error {
 	m := r.Mapper
 
 	fields := m.TraversalsByName(v.Type(), columns)
-	// if we are not unsafe and are missing fields, return an error
-	if f, err := missingFields(fields); err != nil && !r.unsafe {
-		return fmt.Errorf("missing destination name %s in %T", columns[f], dest)
+	if !getOptions(r).allowMissingFields() {
+		// if we are not unsafe and are missing fields, return an error
+		if f, err := missingFields(fields); err != nil {
+			return fmt.Errorf("missing destination name %s in %T", columns[f], dest)
+		}
 	}
 	values := make([]interface{}, len(columns))
 
@@ -1098,9 +1160,11 @@ func scanAll(rows rowsi, dest interface{}, structOnly bool) error {
 		}
 
 		fields := m.TraversalsByName(base, columns)
-		// if we are not unsafe and are missing fields, return an error
-		if f, err := missingFields(fields); err != nil && !isUnsafe(rows) {
-			return fmt.Errorf("missing destination name %s in %T", columns[f], dest)
+		if !getOptions(rows).allowMissingFields() {
+			// if we are not unsafe and are missing fields, return an error
+			if f, err := missingFields(fields); err != nil {
+				return fmt.Errorf("missing destination name %s in %T", columns[f], dest)
+			}
 		}
 		values = make([]interface{}, len(columns))
 
