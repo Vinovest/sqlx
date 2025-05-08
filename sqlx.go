@@ -310,8 +310,23 @@ type DB struct {
 	options    *dbOptions
 }
 
-// NewDb returns a new sqlx DB wrapper for a pre-existing *sql.DB.  The
+// NewDb returns a new sqlx DB wrapper for a pre-existing *sql.DB. The
 // driverName of the original database is required for named query support.
+// 
+// This function now accepts functional options as variadic arguments to configure
+// the database instance. Functional options are functions that modify the internal
+// dbOptions struct. For example:
+//
+//     db := sqlx.NewDb(existingDB, "mysql", sqlx.WithUnsafe())
+//
+// The above example enables unsafe mode, which allows sqlx to continue despite
+// scan issues like missing fields. You can also use WithSetUnsafe to explicitly
+// set the unsafe mode:
+//
+//     db := sqlx.NewDb(existingDB, "mysql", sqlx.WithSetUnsafe(true))
+//
+// You can pass multiple functional options to configure other aspects of the
+// database as needed.
 //
 //lint:ignore ST1003 changing this would break the package interface.
 func NewDb(db *sql.DB, driverName string, args ...func(*dbOptions)) *DB {
