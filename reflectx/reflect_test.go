@@ -432,7 +432,8 @@ func TestFieldsNested(t *testing.T) {
 		{
 			name:           "Too many names",
 			traversalNames: []string{"name", "name", "title", "name", "name"},
-			expected:       [][]int{{0, 0}, {1, 0}, {2, 0}, {3, 0}, {}},
+			// returns 0,0 now to be compatible with existing code
+			expected: [][]int{{0, 0}, {1, 0}, {2, 0}, {3, 0}, {0, 0}},
 		},
 		{
 			name:           "No names",
