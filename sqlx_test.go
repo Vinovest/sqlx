@@ -571,6 +571,47 @@ func TestJoinQuery(t *testing.T) {
 	})
 }
 
+func TestJoinNotEmbeddedQuery(t *testing.T) {
+	type Employee struct {
+		Name string
+		ID   int64
+		// BossID is an id into the employee table
+		BossID *int64 `db:"boss_id"`
+	}
+	type Boss Employee
+
+	RunWithSchema(defaultSchema, t, func(db *DB, t *testing.T, now string) {
+		loadDefaultFixture(db, t)
+
+		var employees []struct {
+			Employee Employee
+			Boss     Boss
+		}
+
+		err := db.Select(
+			&employees,
+			`SELECT employees.*, boss.*
+			  FROM employees
+			  JOIN employees AS boss
+				  ON employees.boss_id = boss.id`)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		for _, em := range employees {
+			if len(em.Employee.Name) == 0 {
+				t.Errorf("Expected non zero lengthed name.")
+			}
+			if len(em.Boss.Name) == 0 {
+				t.Errorf("Expected non zero lengthed name.")
+			}
+			if em.Employee.BossID != nil && *em.Employee.BossID != em.Boss.ID {
+				t.Errorf("Expected boss ids to match")
+			}
+		}
+	})
+}
+
 func TestJoinQueryNamedPointerStructs(t *testing.T) {
 	type Employee struct {
 		Name string
