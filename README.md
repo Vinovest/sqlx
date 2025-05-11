@@ -29,6 +29,10 @@ explains how to use `database/sql` along with sqlx.
 
 ## Changes compared to the original sqlx
 
+* Made complex joins easier to scan by using the position of the field
+  to help map duplicate column names into structs. See the [joins
+  example](./examples/joins/main.go).
+
 * Improved "unsafe" mode at the DB level. "Unsafe" isn't all that
   unsafe, it really is just an additional check when scanning rows. If
   there's a column in the row result that can't be mapped to the
@@ -99,6 +103,7 @@ There are several standalone examples in the examples directory that demonstrate
 * [Named queries](./examples/named/main.go) - named parameter queries
 * [SQL in-lists](./examples/inlist/main.go) - using `In` to generate SQL `IN` clauses
 * [Prepared statements](./examples/preparedstatements/main.go) - prepared statements offer better performance
+* [Complex joins](./examples/joins/main.go) - mapping fields from joins
 
 The simplified form of querying using sqlx looks like the below. Given a struct `Person`, querying all of the rows
 in the `person` table is as simple as:
