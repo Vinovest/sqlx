@@ -13,8 +13,8 @@ type namedPreparerContext interface {
 	binder
 }
 
-// PrepareNamedContext returns a transaction-specific prepared statement from
-// an existing statement.
+// PrepareNamedContext prepares a named statement for use on the database. Use `PrepareContext` on
+// the statement to ready a prepared statement to be used in a transaction.
 //
 // The returned statement operates within the transaction and will be closed
 // when the transaction has been committed or rolled back (you do not need to close it).
@@ -33,6 +33,31 @@ func PrepareNamedContext[T any](ctx context.Context, p namedPreparerContext, que
 		Params:      compiled.names,
 		Stmt:        stmt,
 	}, nil
+}
+
+// PrepareContext returns a transaction-specific prepared statement from
+// an existing statement.
+//
+// It's preferred to use this method over `Prepare` (without context) due to go internals, it
+// uses the connection found in context.
+//
+// The returned statement operates within the transaction and will be closed
+// when the transaction has been committed or rolled back (you do not need to close it).
+func (n *GenericNamedStmt[T]) PrepareContext(ctx context.Context, ndb Queryable) *GenericNamedStmt[T] {
+	tx, ok := ndb.(*Tx)
+	if !ok {
+		// not needed
+		return n
+	}
+	return &GenericNamedStmt[T]{
+		Params:      n.Params,
+		QueryString: n.QueryString,
+		Stmt: &GenericStmt[T]{
+			Stmt:    tx.StmtContext(ctx, n.Stmt.Stmt),
+			options: n.Stmt.options,
+			Mapper:  n.Stmt.Mapper,
+		},
+	}
 }
 
 // ExecContext executes a named statement using the struct passed.
