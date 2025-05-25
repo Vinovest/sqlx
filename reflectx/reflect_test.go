@@ -4,6 +4,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func ival(v reflect.Value) int {
@@ -382,6 +384,70 @@ func TestFieldsEmbedded(t *testing.T) {
 	trs := m.TraversalsByName(reflect.TypeOf(pp), []string{"person.name", "name", "title"})
 	if !reflect.DeepEqual(trs, [][]int{{0, 0}, {1, 0}, {2, 0}}) {
 		t.Errorf("Expecting traversal: %v", trs)
+	}
+}
+
+// TestFieldsNested test with nested structs and name resolution by layout (table-driven version)
+func TestFieldsNested(t *testing.T) {
+	m := NewMapperTagFunc("db", strings.ToLower, func(s string) string { return s })
+
+	type Person struct {
+		Name string
+	}
+	type Place struct {
+		Name string
+	}
+	type Article struct {
+		Title string
+	}
+	type PP struct {
+		Author   Person
+		Place    Place
+		Article  Article
+		Reviewer Person
+	}
+
+	pp := PP{
+		Author:   Person{Name: "Peter"},
+		Place:    Place{Name: "Toronto"},
+		Article:  Article{Title: "Best city ever"},
+		Reviewer: Person{Name: "Reviewer Name"},
+	}
+
+	testCases := []struct {
+		name           string
+		traversalNames []string
+		expected       [][]int
+	}{
+		{
+			name:           "Prefixed struct names",
+			traversalNames: []string{"author.name", "name", "title", "reviewer.name"},
+			expected:       [][]int{{0, 0}, {1, 0}, {2, 0}, {3, 0}},
+		},
+		{
+			name:           "Unprefixed struct names resolved by layout",
+			traversalNames: []string{"name", "name", "title", "name"},
+			expected:       [][]int{{0, 0}, {1, 0}, {2, 0}, {3, 0}},
+		},
+		{
+			name:           "Too many names",
+			traversalNames: []string{"name", "name", "title", "name", "name"},
+			// returns 0,0 now to be compatible with existing code
+			expected: [][]int{{0, 0}, {1, 0}, {2, 0}, {3, 0}, {0, 0}},
+		},
+		{
+			name:           "No names",
+			traversalNames: []string{"title"},
+			expected:       [][]int{{2, 0}},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			trs := m.TraversalsByName(reflect.TypeOf(pp), tc.traversalNames)
+			assert.Equal(t, tc.expected, trs)
+			assert.Equal(t, tc.expected, trs)
+		})
 	}
 }
 

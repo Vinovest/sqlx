@@ -31,6 +31,7 @@ type StructMap struct {
 	Index []*FieldInfo
 	Paths map[string]*FieldInfo
 	Names map[string]*FieldInfo
+	Leafs map[string][]*FieldInfo
 }
 
 // GetByPath returns a *FieldInfo for a given string path.
@@ -166,7 +167,7 @@ func (m *Mapper) FieldsByName(v reflect.Value, names []string) []reflect.Value {
 // to a struct.  Returns empty int slice for each name not found.
 func (m *Mapper) TraversalsByName(t reflect.Type, names []string) [][]int {
 	r := make([][]int, 0, len(names))
-	m.TraversalsByNameFunc(t, names, func(_ int, i []int) error {
+	_ = m.TraversalsByNameFunc(t, names, func(_ int, i []int) error {
 		if i == nil {
 			r = append(r, []int{})
 		} else {
@@ -185,13 +186,40 @@ func (m *Mapper) TraversalsByNameFunc(t reflect.Type, names []string, fn func(in
 	t = Deref(t)
 	mustBe(t, reflect.Struct)
 	tm := m.TypeMap(t)
+	nameCounter := make(map[string]int, len(names))
+
 	for i, name := range names {
 		fi, ok := tm.Names[name]
 		if !ok {
-			if err := fn(i, nil); err != nil {
-				return err
+			if leafs, lok := tm.Leafs[name]; lok {
+				nameCount := nameCounter[name]
+				if nameCount >= len(leafs) {
+					// don't break existing queries, before these would be assigned to the same field
+					if len(leafs) > 0 {
+						if err := fn(i, leafs[0].Index); err != nil {
+							return err
+						}
+					} else {
+						// too many, not found
+						if err := fn(i, nil); err != nil {
+							return err
+						}
+					}
+				} else {
+					fi = leafs[nameCount]
+					nameCounter[fi.Name]++
+					if err := fn(i, fi.Index); err != nil {
+						return err
+					}
+				}
+			} else {
+				nameCounter[name]++
+				if err := fn(i, nil); err != nil {
+					return err
+				}
 			}
 		} else {
+			nameCounter[fi.Name]++
 			if err := fn(i, fi.Index); err != nil {
 				return err
 			}
@@ -426,7 +454,13 @@ QueueLoop:
 		}
 	}
 
-	flds := &StructMap{Index: m, Tree: root, Paths: map[string]*FieldInfo{}, Names: map[string]*FieldInfo{}}
+	flds := &StructMap{
+		Index: m,
+		Tree:  root,
+		Paths: map[string]*FieldInfo{},
+		Names: map[string]*FieldInfo{},
+		Leafs: map[string][]*FieldInfo{},
+	}
 	for _, fi := range flds.Index {
 		// check if nothing has already been pushed with the same path
 		// sometimes you can choose to override a type using embedded struct
@@ -435,6 +469,14 @@ QueueLoop:
 			flds.Paths[fi.Path] = fi
 			if fi.Name != "" && !fi.Embedded {
 				flds.Names[fi.Path] = fi
+				mappedName := fi.Name
+				if mapFunc != nil {
+					mappedName = mapFunc(mappedName)
+				}
+				if _, lok := flds.Leafs[mappedName]; !lok {
+					flds.Leafs[mappedName] = []*FieldInfo{}
+				}
+				flds.Leafs[mappedName] = append(flds.Leafs[mappedName], fi)
 			}
 		}
 	}
