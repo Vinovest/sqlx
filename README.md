@@ -29,6 +29,9 @@ explains how to use `database/sql` along with sqlx.
 
 ## Changes compared to the original sqlx
 
+* Better scanning in the case of outer joins. If a struct contains a nested
+  struct pointer, it will no longer be a scan error.
+
 * Made complex joins easier to scan by using the position of the field
   to help map duplicate column names into structs. See the [joins
   example](./examples/joins/main.go).
