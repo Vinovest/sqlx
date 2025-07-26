@@ -1246,7 +1246,6 @@ func fieldsByTraversal(v reflect.Value, traversals [][]int, values []interface{}
 			// reflectx.FieldByIndexes initializes pointer fields, including pointers to nested structs.
 			// Use optDest to delay it until the first non-NULL value is scanned into a field of a nested struct.
 			// That way we can support LEFT JOINs with optional nested structs.
-			traversal := traversal
 			values[i] = optDest(func() interface{} {
 				return reflectx.FieldByIndexes(v, traversal).Addr().Interface()
 			})
