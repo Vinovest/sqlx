@@ -1,5 +1,20 @@
 # Changes
 
+## 1.7.0:
+
+* Better scanning in the case of outer joins. If a struct contains a nested
+  struct pointer, it will no longer be a scan error.
+
+* Made complex joins easier to scan by using the position of the field
+  to help map duplicate column names into structs. See the [joins
+  example](./examples/joins/main.go).
+
+* Improved "unsafe" mode at the DB level. "Unsafe" isn't all that
+  unsafe, it really is just an additional check when scanning rows. If
+  there's a column in the row result that can't be mapped to the
+  struct, sqlx will return a "missing destination name" error. A new
+  WithUnsafe option for Connect and Open allows you to turn this off.
+
 ## 1.6.0:
 
 * Set Go version to 1.23.

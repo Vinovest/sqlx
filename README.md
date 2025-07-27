@@ -29,6 +29,8 @@ explains how to use `database/sql` along with sqlx.
 
 ## Changes compared to the original sqlx
 
+1.7.0
+
 * Better scanning in the case of outer joins. If a struct contains a nested
   struct pointer, it will no longer be a scan error.
 
