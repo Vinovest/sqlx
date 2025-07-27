@@ -15,7 +15,8 @@ import (
 // docker run --name sqlxpg -p 5444:5432 -e POSTGRES_PASSWORD=password -d docker.io/postgres:17.4
 
 const schema = `
-	CREATE TABLE IF NOT EXISTS person (
+	DROP TABLE IF EXISTS person;
+	CREATE TABLE person (
 	    id SERIAL PRIMARY KEY,
 		first_name text,
 		last_name text,
@@ -23,7 +24,8 @@ const schema = `
 	);
 	TRUNCATE TABLE person;
 	
-	CREATE TABLE IF NOT EXISTS place (
+	DROP TABLE IF EXISTS place;
+	CREATE TABLE place (
 		country text,
 		city text NULL,
 		telcode integer
