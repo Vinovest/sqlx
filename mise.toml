@@ -6,7 +6,7 @@ SQLX_MYSQL_DSN = "root:password@tcp(127.0.0.1:3306)/test"
 SQLX_POSTGRES_DSN = "user=user password=password dbname=postgres host=localhost sslmode=disable"
 
 [tools]
-"go" = { version = "1.23.8" }
+"go" = { version = "1.25.1" }
 "go:honnef.co/go/tools/cmd/staticcheck" = { version = "v0.6.1" }
 "go:golang.org/x/vuln/cmd/govulncheck" = { version = "v1.1.4" }
 "go:golang.org/x/tools/cmd/goimports" = { version = "v0.20.0" }

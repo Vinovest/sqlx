@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go-version: [1.23.10, 1.24.4]
+        go-version: [1.24.7, 1.25.1]
     services:
       postgres:
         image: postgres:17.4
@@ -59,14 +59,14 @@ jobs:
           chart: true
           amend: true
         if: |
-          matrix.go-version == '1.24.4'
+          matrix.go-version == '1.25.1'
         continue-on-error: true
 
   test-race:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go-version: [1.23.10, 1.24.4]
+        go-version: [1.24.7, 1.25.1]
     steps:
       - uses: actions/checkout@v3
       - name: Set up Go
@@ -89,7 +89,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go-version: [1.23.10, 1.24.4]
+        go-version: [1.24.7, 1.25.1]
     steps:
       - uses: actions/checkout@v3
       - name: Set up Go
@@ -116,7 +116,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go-version: [1.23.10, 1.24.4]
+        go-version: [1.24.7, 1.25.1]
     steps:
       - uses: actions/checkout@v3
       - name: Set up Go
