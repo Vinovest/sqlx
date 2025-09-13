@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go-version: [1.23.10, 1.24.4]
+        go-version: [oldstable, stable]
     services:
       postgres:
         image: postgres:17.4
@@ -44,8 +44,8 @@ jobs:
       - name: Run tests
         run: |
           mkdir -p /tmp/test-reports
-          # gotestsum hash is version version v1.12.1
-          go run gotest.tools/gotestsum@3f7ff0ec4aeb6f95f5d67c998b71f272aa8a8b41 --junitfile /tmp/test-reports/unit-tests.xml
+          # gotestsum hash is version version v1.12.3
+          go run gotest.tools/gotestsum@ddd0b05a6878e2e8257a2abe6e7df66cebc53d0e --junitfile /tmp/test-reports/unit-tests.xml
           make test-examples
       - uses: actions/upload-artifact@v4
         name: Upload test results
@@ -59,14 +59,14 @@ jobs:
           chart: true
           amend: true
         if: |
-          matrix.go-version == '1.24.4'
+          matrix.go-version == 'stable'
         continue-on-error: true
 
   test-race:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go-version: [1.23.10, 1.24.4]
+        go-version: [oldstable, stable]
     steps:
       - uses: actions/checkout@v3
       - name: Set up Go
@@ -89,7 +89,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go-version: [1.23.10, 1.24.4]
+        go-version: [oldstable, stable]
     steps:
       - uses: actions/checkout@v3
       - name: Set up Go
@@ -116,7 +116,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go-version: [1.23.10, 1.24.4]
+        go-version: [oldstable, stable]
     steps:
       - uses: actions/checkout@v3
       - name: Set up Go
