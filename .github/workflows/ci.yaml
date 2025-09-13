@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go-version: [1.24.7, 1.25.1]
+        go-version: [oldstable, stable]
     services:
       postgres:
         image: postgres:17.4
