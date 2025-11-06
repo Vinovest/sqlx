@@ -1,6 +1,6 @@
 # sqlx
 
-[![Go Coverage](https://github.com/vinovest/sqlx/wiki/coverage.svg)](https://raw.githack.com/wiki/vinovest/sqlx/coverage.html) [![license](https://img.shields.io/badge/license-MIT-green/.svg?style=flat)](https://raw.githubusercontent.com/vinovest/sqlx/master/LICENSE)
+[![PkgGoDev](https://pkg.go.dev/badge/github.com/Vinovest/sqlx)](https://pkg.go.dev/github.com/Vinovest/sqlx) [![Go Coverage](https://github.com/vinovest/sqlx/wiki/coverage.svg)](https://raw.githack.com/wiki/vinovest/sqlx/coverage.html) [![license](https://img.shields.io/badge/license-MIT-green/.svg?style=flat)](https://raw.githubusercontent.com/vinovest/sqlx/master/LICENSE)
 
 This is Vinovest's fork of https://github.com/jmoiron/sqlx.git for
 ongoing support. Sqlx hasn't been updated in a while and we use it
