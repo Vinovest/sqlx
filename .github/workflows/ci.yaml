@@ -137,7 +137,7 @@ jobs:
       - name: go vet
         run: mise vet 
       - name: Running staticcheck
-        run: mise staticcheck
+        run: mise static
       - name: Running vulncheck
         run: mise vuln
 
