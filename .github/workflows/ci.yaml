@@ -134,8 +134,10 @@ jobs:
           path: ${{ needs.preflight.outputs.gopath }}/pkg/mod
           key: ${{ needs.preflight.outputs.go-mods-cache-key }}
           fail-on-cache-miss: true
-      - name: Linting
-        run: mise vet staticcheck
+      - name: go vet
+        run: mise vet 
+      - name: Running staticcheck
+        run: mise staticcheck
       - name: Running vulncheck
         run: mise vuln
 
