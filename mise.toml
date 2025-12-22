@@ -10,7 +10,7 @@ go = "1.25.1"
 "go:honnef.co/go/tools/cmd/staticcheck" = { version = "v0.6.1" }
 "go:golang.org/x/vuln/cmd/govulncheck" = { version = "v1.1.4" }
 "go:golang.org/x/tools/cmd/goimports" = { version = "v0.20.0" }
-"go;gotest.tools/gotestsum" = { version = "ddd0b05a6878e2e8257a2abe6e7df66cebc53d0e" }
+"go:gotest.tools/gotestsum" = { version = "ddd0b05a6878e2e8257a2abe6e7df66cebc53d0e" }
 
 [tasks]
 test = "go test ./..."
