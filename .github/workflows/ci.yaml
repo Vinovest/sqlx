@@ -9,11 +9,49 @@ on:
       - main
 
 jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    outputs:
+      gopath: ${{ steps.gopath.outputs.value }}
+      go-mods-cache-key: ${{ steps.cache-keys.outputs.go-mods-cache-key }}
+      go-bins-cache-key: ${{ steps.cache-keys.outputs.go-bins-cache-key }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: "false"
+
+      - uses: jdx/mise-action@v3
+        with:
+          cache: true 
+          reshim: true 
+          github_token: ${{ secrets.GITHUB_TOKEN }} 
+
+      - name: Get Go path
+        id: gopath
+        run: echo "value=$(go env GOPATH)" >> $GITHUB_OUTPUT
+
+      - name: Cache keys
+        id: cache-keys
+        run: |
+          echo "go-mods-cache-key=go-mods-${{ runner.os }}-${{ hashFiles('**/go.sum') }}" >> $GITHUB_OUTPUT
+
+      - name: Cache Go mods
+        id: go-mods-cache
+        uses: actions/cache@v4
+        with:
+          lookup-only: true
+          path: ${{ steps.gopath.outputs.value }}/pkg/mod
+          key: ${{ steps.cache-keys.outputs.go-mods-cache-key }}
+
+      - name: 📥 Download dependencies
+        if: steps.go-mods-cache.outputs.cache-hit != 'true'
+        run: go mod download
+
+
+
   test:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        go-version: [oldstable, stable]
+    needs: preflight
     services:
       postgres:
         image: postgres:17.4
@@ -27,31 +65,30 @@ jobs:
         env:
           POSTGRES_PASSWORD: password
     steps:
-      - uses: actions/checkout@v3
-      - name: Set up Go
-        uses: actions/setup-go@v4
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v3
         with:
-          go-version: ${{ matrix.go-version }}
-      - name: Cache Go modules
-        uses: actions/cache@v3
+          cache: true 
+          reshim: true 
+          github_token: ${{ secrets.GITHUB_TOKEN }} 
+      - name: 💾 Cache Go mods
+        uses: actions/cache@v4
         with:
-          path: |
-            ~/.cache/go-build
-            /go/pkg/mod
-          key: go-mod-v4-${{ hashFiles('**/go.sum') }}
-      - name: Install Dependencies
-        run: go mod download
-      - name: Run tests
+          path: ${{ needs.preflight.outputs.gopath }}/pkg/mod
+          key: ${{ needs.preflight.outputs.go-mods-cache-key }}
+          fail-on-cache-miss: true
+      - name: Run tests units
         run: |
           mkdir -p /tmp/test-reports
-          # gotestsum hash is version version v1.12.3
-          go run gotest.tools/gotestsum@ddd0b05a6878e2e8257a2abe6e7df66cebc53d0e --junitfile /tmp/test-reports/unit-tests.xml
-          make test-examples
+          gotestsum --junitfile /tmp/test-reports/unit-tests.xml
       - uses: actions/upload-artifact@v4
         name: Upload test results
         with:
           name: test-reports-${{ matrix.go-version }}
           path: /tmp/test-reports
+      - name: Run Examples
+        run: make test-examples
+      
       - name: Update coverage report
         uses: ncruces/go-coverage-report@v0.3.0
         with:
@@ -64,77 +101,61 @@ jobs:
 
   test-race:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        go-version: [oldstable, stable]
+    needs: preflight
     steps:
-      - uses: actions/checkout@v3
-      - name: Set up Go
-        uses: actions/setup-go@v4
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v3
         with:
-          go-version: ${{ matrix.go-version }}
-      - name: Cache Go modules
-        uses: actions/cache@v3
+          cache: true 
+          reshim: true 
+          github_token: ${{ secrets.GITHUB_TOKEN }} 
+      - name: 💾 Cache Go mods
+        uses: actions/cache@v4
         with:
-          path: |
-            ~/.cache/go-build
-            /go/pkg/mod
-          key: go-mod-v4-${{ hashFiles('**/go.sum') }}
-      - name: Install Dependencies
-        run: go mod download
+          path: ${{ needs.preflight.outputs.gopath }}/pkg/mod
+          key: ${{ needs.preflight.outputs.go-mods-cache-key }}
+          fail-on-cache-miss: true
       - name: Run tests with race detector
         run: make test-race
 
   lint:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        go-version: [oldstable, stable]
+    needs: preflight
     steps:
-      - uses: actions/checkout@v3
-      - name: Set up Go
-        uses: actions/setup-go@v4
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v3
         with:
-          go-version: ${{ matrix.go-version }}
-      - name: Cache Go modules
-        uses: actions/cache@v3
+          cache: true 
+          reshim: true 
+          github_token: ${{ secrets.GITHUB_TOKEN }} 
+      - name: 💾 Cache Go mods
+        uses: actions/cache@v4
         with:
-          path: |
-            ~/.cache/go-build
-            /go/pkg/mod
-          key: go-mod-v4-${{ hashFiles('**/go.sum') }}
-      - name: Install Dependencies
-        run: go mod download
-      - name: Install tooling
-        run: make tooling
+          path: ${{ needs.preflight.outputs.gopath }}/pkg/mod
+          key: ${{ needs.preflight.outputs.go-mods-cache-key }}
+          fail-on-cache-miss: true
       - name: Linting
-        run: make lint
+        run: mise vet staticcheck
       - name: Running vulncheck
-        run: make vuln-check
+        run: mise vuln
 
   fmt:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        go-version: [oldstable, stable]
+    needs: preflight
     steps:
-      - uses: actions/checkout@v3
-      - name: Set up Go
-        uses: actions/setup-go@v4
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v3
         with:
-          go-version: ${{ matrix.go-version }}
-      - name: Cache Go modules
-        uses: actions/cache@v3
+          cache: true 
+          reshim: true 
+          github_token: ${{ secrets.GITHUB_TOKEN }} 
+      - name: 💾 Cache Go mods
+        uses: actions/cache@v4
         with:
-          path: |
-            ~/.cache/go-build
-            /go/pkg/mod
-          key: go-mod-v4-${{ hashFiles('**/go.sum') }}
-      - name: Install Dependencies
-        run: go mod download
-      - name: Install tooling
-        run: make tooling
+          path: ${{ needs.preflight.outputs.gopath }}/pkg/mod
+          key: ${{ needs.preflight.outputs.go-mods-cache-key }}
+          fail-on-cache-miss: true
       - name: Running formatting
         run: |
-          make fmt
-          make has-changes
+          mise fmt
+          mise has-changes

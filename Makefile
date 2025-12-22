@@ -17,7 +17,8 @@ lint:
 	staticcheck -checks=all ./...
 
 fmt:
-	go list -f '{{.Dir}}' ./... | xargs -I {} goimports -local $(BASE_PACKAGE) -w {}
+	go fmt ./...
+	goimports -l -w .
 
 vuln-check:
 	govulncheck ./...
