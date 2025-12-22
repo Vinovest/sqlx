@@ -62,7 +62,7 @@ func TestBasicEmbedded(t *testing.T) {
 	z.Bar.Foo.A = 3
 
 	zv := reflect.ValueOf(z)
-	fields := m.TypeMap(reflect.TypeOf(z))
+	fields := m.TypeMap(reflect.TypeFor[Baz]())
 
 	if len(fields.Index) != 5 {
 		t.Errorf("Expecting 5 fields")
@@ -103,10 +103,9 @@ func TestEmbeddedSimple(t *testing.T) {
 	type Item struct {
 		ID MyID
 	}
-	z := Item{}
 
 	m := NewMapper("db")
-	m.TypeMap(reflect.TypeOf(z))
+	m.TypeMap(reflect.TypeFor[Item]())
 }
 
 func TestBasicEmbeddedWithTags(t *testing.T) {
@@ -132,7 +131,7 @@ func TestBasicEmbeddedWithTags(t *testing.T) {
 	z.Bar.Foo.A = 3
 
 	zv := reflect.ValueOf(z)
-	fields := m.TypeMap(reflect.TypeOf(z))
+	fields := m.TypeMap(reflect.TypeFor[Baz]())
 
 	if len(fields.Index) != 5 {
 		t.Errorf("Expecting 5 fields")
@@ -171,7 +170,7 @@ func TestBasicEmbeddedWithSameName(t *testing.T) {
 	z.Foo.Foo = 3
 
 	zv := reflect.ValueOf(z)
-	fields := m.TypeMap(reflect.TypeOf(z))
+	fields := m.TypeMap(reflect.TypeFor[FooExt]())
 
 	if len(fields.Index) != 4 {
 		t.Errorf("Expecting 3 fields, found %d", len(fields.Index))
@@ -273,7 +272,7 @@ func TestInlineStruct(t *testing.T) {
 	em := person{Employee: Employee{Name: "Joe", ID: 2}, Boss: Boss{Name: "Dick", ID: 1}}
 	ev := reflect.ValueOf(em)
 
-	fields := m.TypeMap(reflect.TypeOf(em))
+	fields := m.TypeMap(reflect.TypeFor[person]())
 	if len(fields.Index) != 6 {
 		t.Errorf("Expecting 6 fields")
 	}
@@ -293,8 +292,7 @@ func TestRecursiveStruct(t *testing.T) {
 		Parent *Person
 	}
 	m := NewMapperFunc("db", strings.ToLower)
-	var p *Person
-	m.TypeMap(reflect.TypeOf(p))
+	m.TypeMap(reflect.TypeFor[*Person]())
 }
 
 func TestFieldsEmbedded(t *testing.T) {
@@ -321,7 +319,7 @@ func TestFieldsEmbedded(t *testing.T) {
 	pp.Place.Name = "Toronto"
 	pp.Article.Title = "Best city ever"
 
-	fields := m.TypeMap(reflect.TypeOf(pp))
+	fields := m.TypeMap(reflect.TypeFor[PP]())
 	// for i, f := range fields {
 	// 	log.Println(i, f)
 	// }
@@ -381,7 +379,7 @@ func TestFieldsEmbedded(t *testing.T) {
 		t.Errorf("Expecting required option to be set")
 	}
 
-	trs := m.TraversalsByName(reflect.TypeOf(pp), []string{"person.name", "name", "title"})
+	trs := m.TraversalsByName(reflect.TypeFor[PP](), []string{"person.name", "name", "title"})
 	if !reflect.DeepEqual(trs, [][]int{{0, 0}, {1, 0}, {2, 0}}) {
 		t.Errorf("Expecting traversal: %v", trs)
 	}
@@ -405,13 +403,6 @@ func TestFieldsNested(t *testing.T) {
 		Place    Place
 		Article  Article
 		Reviewer Person
-	}
-
-	pp := PP{
-		Author:   Person{Name: "Peter"},
-		Place:    Place{Name: "Toronto"},
-		Article:  Article{Title: "Best city ever"},
-		Reviewer: Person{Name: "Reviewer Name"},
 	}
 
 	testCases := []struct {
@@ -444,7 +435,7 @@ func TestFieldsNested(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			trs := m.TraversalsByName(reflect.TypeOf(pp), tc.traversalNames)
+			trs := m.TraversalsByName(reflect.TypeFor[PP](), tc.traversalNames)
 			assert.Equal(t, tc.expected, trs)
 			assert.Equal(t, tc.expected, trs)
 		})
@@ -464,7 +455,7 @@ func TestPtrFields(t *testing.T) {
 	post := &Post{Author: "Joe", Asset: &Asset{Title: "Hiyo"}}
 	pv := reflect.ValueOf(post)
 
-	fields := m.TypeMap(reflect.TypeOf(post))
+	fields := m.TypeMap(reflect.TypeFor[*Post]())
 	if len(fields.Index) != 3 {
 		t.Errorf("Expecting 3 fields")
 	}
@@ -501,7 +492,7 @@ func TestNamedPtrFields(t *testing.T) {
 	post := &Post{Author: "Joe", Asset1: &Asset{Title: "Hiyo", Owner: &User{"Username"}}} // Let Asset2 be nil
 	pv := reflect.ValueOf(post)
 
-	fields := m.TypeMap(reflect.TypeOf(post))
+	fields := m.TypeMap(reflect.TypeFor[*Post]())
 	if len(fields.Index) != 9 {
 		t.Errorf("Expecting 9 fields")
 	}
@@ -566,8 +557,7 @@ func TestTagNameMapping(t *testing.T) {
 		}
 		return value
 	})
-	strategy := Strategy{"1", "Alpah"}
-	mapping := m.TypeMap(reflect.TypeOf(strategy))
+	mapping := m.TypeMap(reflect.TypeFor[Strategy]())
 
 	for _, key := range []string{"strategy_id", "STRATEGYNAME"} {
 		if fi := mapping.GetByPath(key); fi == nil {
@@ -585,7 +575,7 @@ func TestMapping(t *testing.T) {
 
 	m := NewMapperFunc("db", strings.ToLower)
 	p := Person{1, "Jason", true}
-	mapping := m.TypeMap(reflect.TypeOf(p))
+	mapping := m.TypeMap(reflect.TypeFor[Person]())
 
 	for _, key := range []string{"id", "name", "wears_glasses"} {
 		if fi := mapping.GetByPath(key); fi == nil {
@@ -599,7 +589,7 @@ func TestMapping(t *testing.T) {
 		Person
 	}
 	s := SportsPerson{Weight: 100, Age: 30, Person: p}
-	mapping = m.TypeMap(reflect.TypeOf(s))
+	mapping = m.TypeMap(reflect.TypeFor[SportsPerson]())
 	for _, key := range []string{"id", "name", "wears_glasses", "weight", "age"} {
 		if fi := mapping.GetByPath(key); fi == nil {
 			t.Errorf("Expecting to find key %s in mapping but did not.", key)
@@ -612,8 +602,7 @@ func TestMapping(t *testing.T) {
 		IsAllBlack bool `db:"-"`
 		SportsPerson
 	}
-	r := RugbyPlayer{12, true, false, s}
-	mapping = m.TypeMap(reflect.TypeOf(r))
+	mapping = m.TypeMap(reflect.TypeFor[RugbyPlayer]())
 	for _, key := range []string{"id", "name", "wears_glasses", "weight", "age", "position", "is_intense"} {
 		if fi := mapping.GetByPath(key); fi == nil {
 			t.Errorf("Expecting to find key %s in mapping but did not.", key)
@@ -671,7 +660,7 @@ func TestGetByTraversal(t *testing.T) {
 	}
 
 	m := NewMapperFunc("db", func(n string) string { return n })
-	tm := m.TypeMap(reflect.TypeOf(A{}))
+	tm := m.TypeMap(reflect.TypeFor[A]())
 
 	for i, tc := range testCases {
 		fi := tm.GetByTraversal(tc.Index)
@@ -727,7 +716,7 @@ func TestMapperMethodsByName(t *testing.T) {
 	testCases := []struct {
 		Name            string
 		ExpectInvalid   bool
-		ExpectedValue   interface{}
+		ExpectedValue   any
 		ExpectedIndexes []int
 	}{
 		{
@@ -855,9 +844,9 @@ func TestFieldByIndexes(t *testing.T) {
 		A2 *B
 	}
 	testCases := []struct {
-		value         interface{}
+		value         any
 		indexes       []int
-		expectedValue interface{}
+		expectedValue any
 		readOnly      bool
 	}{
 		{
@@ -904,7 +893,7 @@ func TestFieldByIndexes(t *testing.T) {
 }
 
 func TestMustBe(t *testing.T) {
-	typ := reflect.TypeOf(E1{})
+	typ := reflect.TypeFor[E1]()
 	mustBe(typ, reflect.Struct)
 
 	defer func() {
@@ -925,7 +914,7 @@ func TestMustBe(t *testing.T) {
 		}
 	}()
 
-	typ = reflect.TypeOf("string")
+	typ = reflect.TypeFor[string]()
 	mustBe(typ, reflect.Struct)
 	t.Fatal("got here, didn't expect to")
 }
@@ -1026,7 +1015,7 @@ func BenchmarkTraversalsByName(b *testing.B) {
 	}
 
 	m := NewMapper("")
-	t := reflect.TypeOf(D{})
+	t := reflect.TypeFor[D]()
 	names := []string{"C", "B", "A", "Value"}
 
 	b.ResetTimer()
@@ -1056,7 +1045,7 @@ func BenchmarkTraversalsByNameFunc(b *testing.B) {
 	}
 
 	m := NewMapper("")
-	t := reflect.TypeOf(D{})
+	t := reflect.TypeFor[D]()
 	names := []string{"C", "B", "A", "Z", "Y"}
 
 	b.ResetTimer()

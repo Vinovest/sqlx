@@ -27,7 +27,7 @@ func TestJSONText(t *testing.T) {
 	if err != nil {
 		t.Errorf("Was not expecting an error")
 	}
-	m := map[string]interface{}{}
+	m := map[string]any{}
 	j.Unmarshal(&m)
 
 	if m["foo"].(float64) != 1 || m["bar"].(float64) != 2 {
@@ -77,7 +77,7 @@ func TestNullJSONText(t *testing.T) {
 	if err != nil {
 		t.Errorf("Was not expecting an error")
 	}
-	m := map[string]interface{}{}
+	m := map[string]any{}
 	j.Unmarshal(&m)
 
 	if m["foo"].(float64) != 1 || m["bar"].(float64) != 2 {
