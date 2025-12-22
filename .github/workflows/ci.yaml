@@ -17,6 +17,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Run test and lint on ${{ matrix.go-version }}
-        uses: ./.github/workflows/lint-test.yaml
+        uses: ./.github/workflows/lint-tests.yaml
         with:
           go-version: ${{ matrix.go-version }}
