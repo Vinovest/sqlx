@@ -142,7 +142,7 @@ func TestTransact(t *testing.T) {
 			txFunc: func(ctx context.Context, db Queryable) error {
 				// to use in the transaction it must be prepared in the transaction
 				txstmt := nstmtx.Prepare(db)
-				_, err := txstmt.ExecContext(ctx, map[string]interface{}{"name": "aaron"})
+				_, err := txstmt.ExecContext(ctx, map[string]any{"name": "aaron"})
 				// txstmt.Close() is not needed, it will be closed when the transaction is committed or rolled back
 				require.NoError(t, err)
 				return nil

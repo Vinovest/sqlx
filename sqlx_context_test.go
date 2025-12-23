@@ -176,7 +176,7 @@ func TestMissingNamesContextContext(t *testing.T) {
 				t.Error("expected NamedStmt to be unsafe but its underlying stmt did not inherit safety")
 			}
 			pps := []PersonPlus{}
-			err = nstmt.Select(&pps, map[string]interface{}{"name": "Jason"})
+			err = nstmt.Select(&pps, map[string]any{"name": "Jason"})
 			require.NoError(t, err)
 			if len(pps) != 1 {
 				t.Errorf("Expected 1 person back, got %d", len(pps))
@@ -196,7 +196,7 @@ func TestMissingNamesContextContext(t *testing.T) {
 				t.Error("expected newly unsafed NamedStmt to be unsafe")
 			}
 			pps := []PersonPlus{}
-			err = nstmt.Select(&pps, map[string]interface{}{"name": "Jason"})
+			err = nstmt.Select(&pps, map[string]any{"name": "Jason"})
 			require.NoError(t, err)
 			if len(pps) != 1 {
 				t.Errorf("Expected 1 person back, got %d", len(pps))
@@ -229,7 +229,7 @@ func TestMissingNamesContextContext(t *testing.T) {
 			if !getOptions(ps).allowMissingFields() {
 				t.Error("NamedStmt did not inherit unsafe")
 			}
-			pps, err := ps.List(map[string]interface{}{"name": "Jason"})
+			pps, err := ps.List(map[string]any{"name": "Jason"})
 			require.NoError(t, err)
 			if len(pps) != 1 {
 				t.Errorf("Expected 1 person back, got %d", len(pps))
@@ -425,7 +425,7 @@ func TestSelectSliceMapTimeContext(t *testing.T) {
 			t.Fatal(err)
 		}
 		for rows.Next() {
-			m := map[string]interface{}{}
+			m := map[string]any{}
 			err := rows.MapScan(m)
 			if err != nil {
 				t.Error(err)
@@ -1070,7 +1070,7 @@ func TestUsageContext(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		m := map[string]interface{}{}
+		m := map[string]any{}
 		for rows.Next() {
 			err = rows.MapScan(m)
 			if err != nil {
@@ -1098,7 +1098,7 @@ func TestUsageContext(t *testing.T) {
 
 		// test advanced querying
 		// test that NamedExec works with a map as well as a struct
-		_, err = db.NamedExecContext(ctx, "INSERT INTO person (first_name, last_name, email) VALUES (:first, :last, :email)", map[string]interface{}{
+		_, err = db.NamedExecContext(ctx, "INSERT INTO person (first_name, last_name, email) VALUES (:first, :last, :email)", map[string]any{
 			"first": "Bin",
 			"last":  "Smuth",
 			"email": "bensmith@ex.co",
@@ -1109,7 +1109,7 @@ func TestUsageContext(t *testing.T) {
 
 		// ensure that if the named param happens right at the end it still works
 		// ensure that NamedQuery works with a map[string]interface{}
-		rows, err = db.NamedQueryContext(ctx, "SELECT * FROM person WHERE first_name=:first", map[string]interface{}{"first": "Bin"})
+		rows, err = db.NamedQueryContext(ctx, "SELECT * FROM person WHERE first_name=:first", map[string]any{"first": "Bin"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1354,7 +1354,7 @@ func TestInContext(t *testing.T) {
 		name      string
 		q         string
 		expected  string
-		args      []interface{}
+		args      []any
 		flatCount int
 		wantErr   bool
 		err       string
@@ -1364,14 +1364,14 @@ func TestInContext(t *testing.T) {
 			name:      "additional arguments",
 			q:         "SELECT * FROM foo WHERE x = ? AND v in (?) AND y = ?",
 			expected:  "SELECT * FROM foo WHERE x = ? AND v in (?, ?, ?, ?, ?) AND y = ?",
-			args:      []interface{}{"foo", []int{0, 5, 7, 2, 9}, "bar"},
+			args:      []any{"foo", []int{0, 5, 7, 2, 9}, "bar"},
 			flatCount: 7,
 		},
 		{
 			name:      "a single list",
 			q:         "SELECT * FROM foo WHERE x in (?)",
 			expected:  "SELECT * FROM foo WHERE x in (?, ?, ?, ?, ?, ?, ?, ?)",
-			args:      []interface{}{[]int{1, 2, 3, 4, 5, 6, 7, 8}},
+			args:      []any{[]int{1, 2, 3, 4, 5, 6, 7, 8}},
 			flatCount: 8,
 		},
 		{
@@ -1382,21 +1382,21 @@ FROM foo WHERE x in (?)`,
 			expected: `SELECT *
 -- comment in question?
 FROM foo WHERE x in (?)`,
-			args:      []interface{}{[]int{1}},
+			args:      []any{[]int{1}},
 			flatCount: 1,
 		},
 		{
 			name:      "question mark in value",
 			q:         `SELECT *, 'something?' as something FROM foo WHERE x in (?)`,
 			expected:  `SELECT *, 'something?' as something FROM foo WHERE x in (?)`,
-			args:      []interface{}{[]int{1}},
+			args:      []any{[]int{1}},
 			flatCount: 1,
 		},
 		{
 			name:      "literal values",
 			q:         `SELECT *, 'something?' as something FROM foo WHERE x in ('123?', ?)`,
 			expected:  `SELECT *, 'something?' as something FROM foo WHERE x in ('123?', ?, ?)`,
-			args:      []interface{}{[]int{1, 2}},
+			args:      []any{[]int{1, 2}},
 			flatCount: 2,
 		},
 		{
@@ -1406,28 +1406,28 @@ FROM foo WHERE x in (?)`,
 			name:      "too many bindVars but no slices",
 			q:         "SELECT * FROM foo WHERE x = ? AND y = ?",
 			expected:  `SELECT * FROM foo WHERE x = ? AND y = ?`,
-			args:      []interface{}{"foo", "bar", "baz"},
+			args:      []any{"foo", "bar", "baz"},
 			flatCount: 3,
 		},
 		{
 			name: "too many bindvars",
 			q:    "SELECT * FROM foo WHERE x = ? and y = ?",
 			// 		"SELECT * FROM foo WHERE x = ? and y = ?",
-			args:    []interface{}{"foo", []int{1, 2, 3}, "bar"},
+			args:    []any{"foo", []int{1, 2, 3}, "bar"},
 			wantErr: true,
 			err:     "number of bindVars less than number arguments",
 		},
 		{
 			name:    "empty slice, should return error before parse",
 			q:       "SELECT * FROM foo WHERE x = ?",
-			args:    []interface{}{[]int{}},
+			args:    []any{[]int{}},
 			wantErr: true,
 			err:     "empty slice passed to 'in' query",
 		},
 		{
 			name:    "too few bindvars, should return an error",
 			q:       "SELECT * FROM foo WHERE x = ? AND y in (?)",
-			args:    []interface{}{[]int{1, 2, 3}},
+			args:    []any{[]int{1, 2, 3}},
 			wantErr: true,
 			err:     "number of bindVars exceeds arguments",
 		},

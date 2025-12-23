@@ -77,7 +77,6 @@ func TestCompileQuery(t *testing.T) {
 	}
 
 	for _, test := range table {
-		test := test
 		n := test.d
 		if n == "" {
 			n = test.Q
@@ -125,7 +124,7 @@ type Test struct {
 	t *testing.T
 }
 
-func (t Test) Error(err error, msg ...interface{}) {
+func (t Test) Error(err error, msg ...any) {
 	t.t.Helper()
 	if err != nil {
 		if len(msg) == 0 {
@@ -136,7 +135,7 @@ func (t Test) Error(err error, msg ...interface{}) {
 	}
 }
 
-func (t Test) Errorf(err error, format string, args ...interface{}) {
+func (t Test) Errorf(err error, format string, args ...any) {
 	t.t.Helper()
 	if err != nil {
 		t.t.Errorf(format, args...)
@@ -256,7 +255,7 @@ func TestNamedQueries(t *testing.T) {
 		test.Error(err)
 
 		// test map batch inserts
-		slsMap := []map[string]interface{}{
+		slsMap := []map[string]any{
 			{"first_name": "Ardie", "last_name": "Savea", "email": "asavea@ab.co.nz"},
 			{"first_name": "Sonny Bill", "last_name": "Williams", "email": "sbw@ab.co.nz"},
 			{"first_name": "Ngani", "last_name": "Laumape", "email": "nlaumape@ab.co.nz"},
@@ -266,7 +265,7 @@ func TestNamedQueries(t *testing.T) {
 			VALUES (:first_name, :last_name, :email) ;--`, slsMap)
 		test.Error(err)
 
-		type A map[string]interface{}
+		type A map[string]any
 
 		typedMap := []A{
 			{"first_name": "Ardie", "last_name": "Savea", "email": "asavea@ab.co.nz"},
