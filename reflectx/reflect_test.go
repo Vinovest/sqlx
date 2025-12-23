@@ -574,7 +574,6 @@ func TestMapping(t *testing.T) {
 	}
 
 	m := NewMapperFunc("db", strings.ToLower)
-	p := Person{1, "Jason", true}
 	mapping := m.TypeMap(reflect.TypeFor[Person]())
 
 	for _, key := range []string{"id", "name", "wears_glasses"} {
