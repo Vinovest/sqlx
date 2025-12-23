@@ -588,7 +588,6 @@ func TestMapping(t *testing.T) {
 		Age    int
 		Person
 	}
-	s := SportsPerson{Weight: 100, Age: 30, Person: p}
 	mapping = m.TypeMap(reflect.TypeFor[SportsPerson]())
 	for _, key := range []string{"id", "name", "wears_glasses", "weight", "age"} {
 		if fi := mapping.GetByPath(key); fi == nil {
