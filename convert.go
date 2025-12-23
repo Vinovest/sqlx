@@ -5,4 +5,4 @@ import (
 )
 
 //go:linkname convertAssign database/sql.convertAssign
-func convertAssign(dest, src interface{}) error
+func convertAssign(dest, src any) error

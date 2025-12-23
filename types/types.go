@@ -27,7 +27,7 @@ func (g GzippedText) Value() (driver.Value, error) {
 
 // Scan implements the sql.Scanner interface, ungzipping the value coming off
 // the wire and storing the raw result in the GzippedText.
-func (g *GzippedText) Scan(src interface{}) error {
+func (g *GzippedText) Scan(src any) error {
 	var source []byte
 	switch src := src.(type) {
 	case string:
@@ -88,7 +88,7 @@ func (j JSONText) Value() (driver.Value, error) {
 }
 
 // Scan stores the src in *j.  No validation is done.
-func (j *JSONText) Scan(src interface{}) error {
+func (j *JSONText) Scan(src any) error {
 	var source []byte
 	switch t := src.(type) {
 	case string:
@@ -110,7 +110,7 @@ func (j *JSONText) Scan(src interface{}) error {
 }
 
 // Unmarshal unmarshal's the json in j to v, as in json.Unmarshal.
-func (j *JSONText) Unmarshal(v interface{}) error {
+func (j *JSONText) Unmarshal(v any) error {
 	if len(*j) == 0 {
 		*j = emptyJSON
 	}
@@ -131,7 +131,7 @@ type NullJSONText struct {
 }
 
 // Scan implements the Scanner interface.
-func (n *NullJSONText) Scan(value interface{}) error {
+func (n *NullJSONText) Scan(value any) error {
 	if value == nil {
 		n.JSONText, n.Valid = emptyJSON, false
 		return nil
@@ -163,7 +163,7 @@ func (b BitBool) Value() (driver.Value, error) {
 
 // Scan implements the sql.Scanner interface,
 // and turns the bitfield incoming from MySQL into a BitBool
-func (b *BitBool) Scan(src interface{}) error {
+func (b *BitBool) Scan(src any) error {
 	v, ok := src.([]byte)
 	if !ok {
 		return errors.New("bad []byte type assertion")
