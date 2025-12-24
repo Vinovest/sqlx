@@ -17,9 +17,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: "false"
+          persist-credentials: false
 
-      - uses: jdx/mise-action@v3
+      - uses: jdx/mise-action@146a28175021df8ca24f8ee1828cc2a60f980bd5
         with:
           cache: true
           reshim: true
@@ -65,7 +65,9 @@ jobs:
           POSTGRES_PASSWORD: password
     steps:
       - uses: actions/checkout@v4
-      - uses: jdx/mise-action@v3
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@146a28175021df8ca24f8ee1828cc2a60f980bd5
         with:
           cache: true
           reshim: true
@@ -91,7 +93,7 @@ jobs:
         run: make test-examples
 
       - name: Update coverage report
-        uses: ncruces/go-coverage-report@v0.3.0
+        uses: ncruces/go-coverage-report@aa507d98fb11c2b4dffa1b731e0786f50fd8ec93
         with:
           report: true
           chart: true
@@ -105,7 +107,9 @@ jobs:
     needs: preflight
     steps:
       - uses: actions/checkout@v4
-      - uses: jdx/mise-action@v3
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@146a28175021df8ca24f8ee1828cc2a60f980bd5
         with:
           cache: true
           reshim: true
@@ -126,7 +130,9 @@ jobs:
     needs: preflight
     steps:
       - uses: actions/checkout@v4
-      - uses: jdx/mise-action@v3
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@146a28175021df8ca24f8ee1828cc2a60f980bd5
         with:
           cache: true
           reshim: true
@@ -151,7 +157,9 @@ jobs:
     needs: preflight
     steps:
       - uses: actions/checkout@v4
-      - uses: jdx/mise-action@v3
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@146a28175021df8ca24f8ee1828cc2a60f980bd5
         with:
           cache: true
           reshim: true

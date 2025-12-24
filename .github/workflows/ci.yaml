@@ -16,3 +16,5 @@ jobs:
     uses: ./.github/workflows/lint-tests.yaml
     with:
       go-version: ${{ matrix.go-version }}
+    permissions:
+      contents: read
