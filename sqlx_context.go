@@ -21,9 +21,9 @@ func ConnectContext(ctx context.Context, driverName, dataSourceName string) (*DB
 
 // QueryerContext is an interface used by GetContext and SelectContext
 type QueryerContext interface {
-	QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error)
-	QueryxContext(ctx context.Context, query string, args ...interface{}) (*Rows, error)
-	QueryRowxContext(ctx context.Context, query string, args ...interface{}) *Row
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	QueryxContext(ctx context.Context, query string, args ...any) (*Rows, error)
+	QueryRowxContext(ctx context.Context, query string, args ...any) *Row
 }
 
 // PreparerContext is an interface used by PreparexContext.
@@ -33,7 +33,7 @@ type PreparerContext interface {
 
 // ExecerContext is an interface used by MustExecContext and LoadFileContext
 type ExecerContext interface {
-	ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error)
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
 }
 
 // ExtContext is a union interface which can bind, query, and exec, with Context
@@ -49,7 +49,7 @@ type ExtContext interface {
 // scannable, then the result set must have only one column.  Otherwise,
 // StructScan is used. The *sql.Rows are closed automatically.
 // Any placeholder parameters are replaced with supplied args.
-func SelectContext(ctx context.Context, q QueryerContext, dest interface{}, query string, args ...interface{}) error {
+func SelectContext(ctx context.Context, q QueryerContext, dest any, query string, args ...any) error {
 	rows, err := q.QueryxContext(ctx, query, args...)
 	if err != nil {
 		return err
@@ -85,7 +85,7 @@ func preparexContextStmt(ctx context.Context, p PreparerContext, query string) (
 // column. Otherwise, StructScan is used.  Get will return sql.ErrNoRows like
 // row.Scan would. Any placeholder parameters are replaced with supplied args.
 // An error is returned if the result set is empty.
-func GetContext(ctx context.Context, q QueryerContext, dest interface{}, query string, args ...interface{}) error {
+func GetContext(ctx context.Context, q QueryerContext, dest any, query string, args ...any) error {
 	r := q.QueryRowxContext(ctx, query, args...)
 	return r.scanAny(dest, false)
 }
@@ -95,7 +95,7 @@ func GetContext(ctx context.Context, q QueryerContext, dest interface{}, query s
 // column. Otherwise, StructScan is used.  Get will return sql.ErrNoRows like
 // row.Scan would. Any placeholder parameters are replaced with supplied args.
 // An error is returned if the result set is empty.
-func OneContext[T any](ctx context.Context, q QueryerContext, query string, args ...interface{}) (T, error) {
+func OneContext[T any](ctx context.Context, q QueryerContext, query string, args ...any) (T, error) {
 	var dest T
 	r := q.QueryRowxContext(ctx, query, args...)
 	err := r.scanAny(&dest, false)
@@ -103,7 +103,7 @@ func OneContext[T any](ctx context.Context, q QueryerContext, query string, args
 }
 
 // ListContext executes a query using the provided Queryer, and returns a slice of T for each row.
-func ListContext[T any](ctx context.Context, q QueryerContext, query string, args ...interface{}) ([]T, error) {
+func ListContext[T any](ctx context.Context, q QueryerContext, query string, args ...any) ([]T, error) {
 	var dest []T
 	err := SelectContext(ctx, q, &dest, query, args...)
 	return dest, err
@@ -135,7 +135,7 @@ func LoadFileContext(ctx context.Context, e ExecerContext, path string) (*sql.Re
 
 // MustExecContext execs the query using e and panics if there was an error.
 // Any placeholder parameters are replaced with supplied args.
-func MustExecContext(ctx context.Context, e ExecerContext, query string, args ...interface{}) sql.Result {
+func MustExecContext(ctx context.Context, e ExecerContext, query string, args ...any) sql.Result {
 	res, err := e.ExecContext(ctx, query, args...)
 	if err != nil {
 		panic(err)
@@ -150,26 +150,26 @@ func (db *DB) PrepareNamedContext(ctx context.Context, query string) (*NamedStmt
 
 // NamedQueryContext using this DB.
 // Any named placeholder parameters are replaced with fields from arg.
-func (db *DB) NamedQueryContext(ctx context.Context, query string, arg interface{}) (*Rows, error) {
+func (db *DB) NamedQueryContext(ctx context.Context, query string, arg any) (*Rows, error) {
 	return NamedQueryContext(ctx, db, query, arg)
 }
 
 // NamedExecContext using this DB.
 // Any named placeholder parameters are replaced with fields from arg.
-func (db *DB) NamedExecContext(ctx context.Context, query string, arg interface{}) (sql.Result, error) {
+func (db *DB) NamedExecContext(ctx context.Context, query string, arg any) (sql.Result, error) {
 	return NamedExecContext(ctx, db, query, arg)
 }
 
 // SelectContext using this DB.
 // Any placeholder parameters are replaced with supplied args.
-func (db *DB) SelectContext(ctx context.Context, dest interface{}, query string, args ...interface{}) error {
+func (db *DB) SelectContext(ctx context.Context, dest any, query string, args ...any) error {
 	return SelectContext(ctx, db, dest, query, args...)
 }
 
 // GetContext using this DB.
 // Any placeholder parameters are replaced with supplied args.
 // An error is returned if the result set is empty.
-func (db *DB) GetContext(ctx context.Context, dest interface{}, query string, args ...interface{}) error {
+func (db *DB) GetContext(ctx context.Context, dest any, query string, args ...any) error {
 	return GetContext(ctx, db, dest, query, args...)
 }
 
@@ -183,7 +183,7 @@ func (db *DB) PreparexContext(ctx context.Context, query string) (*Stmt, error) 
 
 // QueryxContext queries the database and returns an *sqlx.Rows.
 // Any placeholder parameters are replaced with supplied args.
-func (db *DB) QueryxContext(ctx context.Context, query string, args ...interface{}) (*Rows, error) {
+func (db *DB) QueryxContext(ctx context.Context, query string, args ...any) (*Rows, error) {
 	r, err := db.DB.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
@@ -193,7 +193,7 @@ func (db *DB) QueryxContext(ctx context.Context, query string, args ...interface
 
 // QueryRowxContext queries the database and returns an *sqlx.Row.
 // Any placeholder parameters are replaced with supplied args.
-func (db *DB) QueryRowxContext(ctx context.Context, query string, args ...interface{}) *Row {
+func (db *DB) QueryRowxContext(ctx context.Context, query string, args ...any) *Row {
 	rows, err := db.DB.QueryContext(ctx, query, args...)
 	return &Row{rows: rows, err: err, options: db.options, Mapper: db.Mapper}
 }
@@ -215,7 +215,7 @@ func (db *DB) MustBeginTx(ctx context.Context, opts *sql.TxOptions) *Tx {
 
 // MustExecContext (panic) runs MustExec using this database.
 // Any placeholder parameters are replaced with supplied args.
-func (db *DB) MustExecContext(ctx context.Context, query string, args ...interface{}) sql.Result {
+func (db *DB) MustExecContext(ctx context.Context, query string, args ...any) sql.Result {
 	return MustExecContext(ctx, db, query, args...)
 }
 
@@ -261,14 +261,14 @@ func (c *Conn) BeginTxx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) {
 
 // SelectContext using this Conn.
 // Any placeholder parameters are replaced with supplied args.
-func (c *Conn) SelectContext(ctx context.Context, dest interface{}, query string, args ...interface{}) error {
+func (c *Conn) SelectContext(ctx context.Context, dest any, query string, args ...any) error {
 	return SelectContext(ctx, c, dest, query, args...)
 }
 
 // GetContext using this Conn.
 // Any placeholder parameters are replaced with supplied args.
 // An error is returned if the result set is empty.
-func (c *Conn) GetContext(ctx context.Context, dest interface{}, query string, args ...interface{}) error {
+func (c *Conn) GetContext(ctx context.Context, dest any, query string, args ...any) error {
 	return GetContext(ctx, c, dest, query, args...)
 }
 
@@ -282,7 +282,7 @@ func (c *Conn) PreparexContext(ctx context.Context, query string) (*Stmt, error)
 
 // QueryxContext queries the database and returns an *sqlx.Rows.
 // Any placeholder parameters are replaced with supplied args.
-func (c *Conn) QueryxContext(ctx context.Context, query string, args ...interface{}) (*Rows, error) {
+func (c *Conn) QueryxContext(ctx context.Context, query string, args ...any) (*Rows, error) {
 	r, err := c.Conn.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
@@ -292,7 +292,7 @@ func (c *Conn) QueryxContext(ctx context.Context, query string, args ...interfac
 
 // QueryRowxContext queries the database and returns an *sqlx.Row.
 // Any placeholder parameters are replaced with supplied args.
-func (c *Conn) QueryRowxContext(ctx context.Context, query string, args ...interface{}) *Row {
+func (c *Conn) QueryRowxContext(ctx context.Context, query string, args ...any) *Row {
 	rows, err := c.Conn.QueryContext(ctx, query, args...)
 	return &Row{rows: rows, err: err, options: c.options, Mapper: c.Mapper}
 }
@@ -304,7 +304,7 @@ func (c *Conn) Rebind(query string) string {
 
 // StmtxContext returns a version of the prepared statement which runs within a
 // transaction. Provided stmt can be either *sql.Stmt or *sqlx.Stmt.
-func (tx *Tx) StmtxContext(ctx context.Context, stmt interface{}) *GenericStmt[any] {
+func (tx *Tx) StmtxContext(ctx context.Context, stmt any) *GenericStmt[any] {
 	var s *sql.Stmt
 	switch v := stmt.(type) {
 	case Stmt:
@@ -344,13 +344,13 @@ func (tx *Tx) PrepareNamedContext(ctx context.Context, query string) (*NamedStmt
 
 // MustExecContext runs MustExecContext within a transaction.
 // Any placeholder parameters are replaced with supplied args.
-func (tx *Tx) MustExecContext(ctx context.Context, query string, args ...interface{}) sql.Result {
+func (tx *Tx) MustExecContext(ctx context.Context, query string, args ...any) sql.Result {
 	return MustExecContext(ctx, tx, query, args...)
 }
 
 // QueryxContext within a transaction and context.
 // Any placeholder parameters are replaced with supplied args.
-func (tx *Tx) QueryxContext(ctx context.Context, query string, args ...interface{}) (*Rows, error) {
+func (tx *Tx) QueryxContext(ctx context.Context, query string, args ...any) (*Rows, error) {
 	r, err := tx.Tx.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
@@ -360,69 +360,69 @@ func (tx *Tx) QueryxContext(ctx context.Context, query string, args ...interface
 
 // SelectContext within a transaction and context.
 // Any placeholder parameters are replaced with supplied args.
-func (tx *Tx) SelectContext(ctx context.Context, dest interface{}, query string, args ...interface{}) error {
+func (tx *Tx) SelectContext(ctx context.Context, dest any, query string, args ...any) error {
 	return SelectContext(ctx, tx, dest, query, args...)
 }
 
 // GetContext within a transaction and context.
 // Any placeholder parameters are replaced with supplied args.
 // An error is returned if the result set is empty.
-func (tx *Tx) GetContext(ctx context.Context, dest interface{}, query string, args ...interface{}) error {
+func (tx *Tx) GetContext(ctx context.Context, dest any, query string, args ...any) error {
 	return GetContext(ctx, tx, dest, query, args...)
 }
 
 // QueryRowxContext within a transaction and context.
 // Any placeholder parameters are replaced with supplied args.
-func (tx *Tx) QueryRowxContext(ctx context.Context, query string, args ...interface{}) *Row {
+func (tx *Tx) QueryRowxContext(ctx context.Context, query string, args ...any) *Row {
 	rows, err := tx.Tx.QueryContext(ctx, query, args...)
 	return &Row{rows: rows, err: err, options: tx.options, Mapper: tx.Mapper}
 }
 
 // NamedExecContext using this Tx.
 // Any named placeholder parameters are replaced with fields from arg.
-func (tx *Tx) NamedExecContext(ctx context.Context, query string, arg interface{}) (sql.Result, error) {
+func (tx *Tx) NamedExecContext(ctx context.Context, query string, arg any) (sql.Result, error) {
 	return NamedExecContext(ctx, tx, query, arg)
 }
 
 // SelectContext using the prepared statement.
 // Any placeholder parameters are replaced with supplied args.
-func (s *GenericStmt[T]) SelectContext(ctx context.Context, dest interface{}, args ...interface{}) error {
+func (s *GenericStmt[T]) SelectContext(ctx context.Context, dest any, args ...any) error {
 	return SelectContext(ctx, &qStmt[T]{s}, dest, "", args...)
 }
 
 // GetContext using the prepared statement.
 // Any placeholder parameters are replaced with supplied args.
 // An error is returned if the result set is empty.
-func (s *GenericStmt[T]) GetContext(ctx context.Context, dest interface{}, args ...interface{}) error {
+func (s *GenericStmt[T]) GetContext(ctx context.Context, dest any, args ...any) error {
 	return GetContext(ctx, &qStmt[T]{s}, dest, "", args...)
 }
 
 // MustExecContext (panic) using this statement.  Note that the query portion of
 // the error output will be blank, as Stmt does not expose its query.
 // Any placeholder parameters are replaced with supplied args.
-func (s *GenericStmt[T]) MustExecContext(ctx context.Context, args ...interface{}) sql.Result {
+func (s *GenericStmt[T]) MustExecContext(ctx context.Context, args ...any) sql.Result {
 	return MustExecContext(ctx, &qStmt[T]{s}, "", args...)
 }
 
 // QueryRowxContext using this statement.
 // Any placeholder parameters are replaced with supplied args.
-func (s *GenericStmt[T]) QueryRowxContext(ctx context.Context, args ...interface{}) *Row {
+func (s *GenericStmt[T]) QueryRowxContext(ctx context.Context, args ...any) *Row {
 	qs := &qStmt[T]{s}
 	return qs.QueryRowxContext(ctx, "", args...)
 }
 
 // QueryxContext using this statement.
 // Any placeholder parameters are replaced with supplied args.
-func (s *GenericStmt[T]) QueryxContext(ctx context.Context, args ...interface{}) (*Rows, error) {
+func (s *GenericStmt[T]) QueryxContext(ctx context.Context, args ...any) (*Rows, error) {
 	qs := &qStmt[T]{s}
 	return qs.QueryxContext(ctx, "", args...)
 }
 
-func (q *qStmt[T]) QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error) {
+func (q *qStmt[T]) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
 	return q.Stmt.QueryContext(ctx, args...)
 }
 
-func (q *qStmt[T]) QueryxContext(ctx context.Context, query string, args ...interface{}) (*Rows, error) {
+func (q *qStmt[T]) QueryxContext(ctx context.Context, query string, args ...any) (*Rows, error) {
 	r, err := q.Stmt.QueryContext(ctx, args...)
 	if err != nil {
 		return nil, err
@@ -430,11 +430,11 @@ func (q *qStmt[T]) QueryxContext(ctx context.Context, query string, args ...inte
 	return &Rows{Rows: r, options: q.Stmt.options, Mapper: q.Stmt.Mapper}, err
 }
 
-func (q *qStmt[T]) QueryRowxContext(ctx context.Context, query string, args ...interface{}) *Row {
+func (q *qStmt[T]) QueryRowxContext(ctx context.Context, query string, args ...any) *Row {
 	rows, err := q.Stmt.QueryContext(ctx, args...)
 	return &Row{rows: rows, err: err, options: q.Stmt.options, Mapper: q.Stmt.Mapper}
 }
 
-func (q *qStmt[T]) ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error) {
+func (q *qStmt[T]) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	return q.Stmt.ExecContext(ctx, args...)
 }
