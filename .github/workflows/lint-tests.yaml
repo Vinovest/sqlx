@@ -85,7 +85,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         name: Upload test results
         with:
-          name: test-reports-${{ matrix.go-version }}
+          name: test-reports-${{ inputs.go-version }}
           path: /tmp/test-reports
       - name: Run Examples
         run: make test-examples
@@ -97,7 +97,7 @@ jobs:
           chart: true
           amend: true
         if: |
-          matrix.go-version == 'stable'
+          inputs.go-version == '1.25'
         continue-on-error: true
 
   test-race:
