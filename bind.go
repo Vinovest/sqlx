@@ -211,10 +211,9 @@ func In(query string, args ...any) (string, []any, error) {
 
 			argMeta := meta[arg]
 			arg++
+			isSlice := argMeta.v.IsValid()
 
-			if !inIn || !argMeta.v.IsValid() {
-				// this QuestionMark is not in an in-list that needs expansion.
-				// if v is invalid, then the arg isn't a slice
+			if !inIn || !isSlice {
 				newArgs = append(newArgs, argMeta.i)
 				buf.WriteString(token.Text)
 				continue
