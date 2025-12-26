@@ -3,6 +3,10 @@ package sqlx
 import (
 	"math/rand"
 	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func oldBindType(driverName string) int {
@@ -76,4 +80,15 @@ func BenchmarkBindSpeed(b *testing.B) {
 		}
 
 	})
+}
+
+func TestInNotSlice(t *testing.T) {
+	now := time.Now()
+	args := []any{[]string{"a", "b"}, now}
+	query := ` SELECT * FROM person WHERE first_name IN (?) AND id IN ( SELECT id FROM something WHERE created_at = ? )`
+	insql, newArgs, err := In(query, args...)
+	require.NoError(t, err)
+	assert.Contains(t, insql, "IN (?, ?)")
+	assert.Contains(t, insql, "WHERE created_at = ? )")
+	assert.Equal(t, []any{"a", "b", now}, newArgs)
 }
