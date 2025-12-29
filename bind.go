@@ -211,9 +211,9 @@ func In(query string, args ...any) (string, []any, error) {
 
 			argMeta := meta[arg]
 			arg++
+			isSlice := argMeta.v.IsValid()
 
-			// not an in-list
-			if !inIn {
+			if !inIn || !isSlice {
 				newArgs = append(newArgs, argMeta.i)
 				buf.WriteString(token.Text)
 				continue
