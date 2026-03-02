@@ -65,6 +65,7 @@ type Mapper struct {
 	tagName    string
 	tagMapFunc func(string) string
 	mapFunc    func(string) string
+	colMapFunc func(string) string
 	mutex      sync.Mutex
 }
 
@@ -86,6 +87,19 @@ func NewMapperTagFunc(tagName string, mapFunc, tagMapFunc func(string) string) *
 		tagName:    tagName,
 		mapFunc:    mapFunc,
 		tagMapFunc: tagMapFunc,
+	}
+}
+
+// NewMapperTagColFunc returns a new mapper which contains a mapper for field names
+// AND a mapper for tag values AND sql column names.  This is useful for tags like json which can
+// have values like "name,omitempty", or on databases like Sqlite where column casing in queries cause problems.
+func NewMapperTagColFunc(tagName string, mapFunc, tagMapFunc, colMapFunc func(string) string) *Mapper {
+	return &Mapper{
+		cache:      make(map[reflect.Type]*StructMap),
+		tagName:    tagName,
+		mapFunc:    mapFunc,
+		tagMapFunc: tagMapFunc,
+		colMapFunc: colMapFunc,
 	}
 }
 
@@ -189,6 +203,9 @@ func (m *Mapper) TraversalsByNameFunc(t reflect.Type, names []string, fn func(in
 	nameCounter := make(map[string]int, len(names))
 
 	for i, name := range names {
+		if m.colMapFunc != nil {
+			name = m.colMapFunc(name)
+		}
 		fi, ok := tm.Names[name]
 		if !ok {
 			if leafs, lok := tm.Leafs[name]; lok {

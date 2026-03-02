@@ -815,7 +815,7 @@ func TestNamedQuery(t *testing.T) {
 					t.Errorf("Expected LastName of `smith`, got `%s` (%s)", jp.LastName.String, db.DriverName())
 				}
 				if jp.Email.String != "ben@smith.com" {
-					t.Errorf("Expected first name of `doe`, got `%s` (%s)", jp.Email.String, db.DriverName())
+					t.Errorf("Expected email of `ben@smith.com`, got `%s` (%s)", jp.Email.String, db.DriverName())
 				}
 			}
 		}
@@ -841,6 +841,24 @@ func TestNamedQuery(t *testing.T) {
 		// through the PrepareNamed/NamedStmt path.
 		rows, err = db.NamedQuery(pdb(`
 			SELECT * FROM jsperson
+			WHERE
+				"FIRST"=:FIRST AND
+				last_name=:last_name AND
+				"EMAIL"=:EMAIL
+		`, db), jp)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		check(t, rows)
+
+		// Test the new col mapper which maps the sql column names also.
+		db.Mapper = reflectx.NewMapperTagColFunc("json", strings.ToLower, strings.ToLower, strings.ToLower)
+
+		// Sqlite will return the column names with the same case as we wrote in the query.
+		// So in queries with mixed casing, it will cause problems.
+		rows, err = db.NamedQuery(pdb(`
+			SELECT "FIRST" as fIrSt, last_name as LAST_NAME, "EMAIL" as email FROM jsperson
 			WHERE
 				"FIRST"=:FIRST AND
 				last_name=:last_name AND
