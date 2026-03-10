@@ -266,6 +266,7 @@ type Queryable interface {
 	NamedExecContext(context.Context, string, any) (sql.Result, error)
 	MustExec(string, ...any) sql.Result
 	NamedQuery(string, any) (*Rows, error)
+	NamedQueryContext(context.Context, string, any) (*Rows, error)
 }
 
 var _ Queryable = (*DB)(nil)

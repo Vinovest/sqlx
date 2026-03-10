@@ -378,6 +378,12 @@ func (tx *Tx) QueryRowxContext(ctx context.Context, query string, args ...any) *
 	return &Row{rows: rows, err: err, options: tx.options, Mapper: tx.Mapper}
 }
 
+// NamedQueryContext using this Tx.
+// Any named placeholder parameters are replaced with fields from arg.
+func (tx *Tx) NamedQueryContext(ctx context.Context, query string, arg any) (*Rows, error) {
+	return NamedQueryContext(ctx, tx, query, arg)
+}
+
 // NamedExecContext using this Tx.
 // Any named placeholder parameters are replaced with fields from arg.
 func (tx *Tx) NamedExecContext(ctx context.Context, query string, arg any) (sql.Result, error) {
