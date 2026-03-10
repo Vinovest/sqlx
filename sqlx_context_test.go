@@ -487,7 +487,7 @@ func TestNamedQueryContext(t *testing.T) {
 			`,
 	}
 
-	RunWithSchemaContext(context.Background(), schema, t, func(ctx context.Context, db *DB, t *testing.T) {
+	testWithQueryable := func(ctx context.Context, queryable Queryable, mapper **reflectx.Mapper, t *testing.T) {
 		type Person struct {
 			FirstName sql.NullString `db:"first_name"`
 			LastName  sql.NullString `db:"last_name"`
@@ -500,12 +500,12 @@ func TestNamedQueryContext(t *testing.T) {
 			Email:     sql.NullString{String: "ben@doe.com", Valid: true},
 		}
 
-		_, err := db.NamedExecContext(ctx, `INSERT INTO person (first_name, last_name, email) VALUES (:first_name, :last_name, :email)`, p)
+		_, err := queryable.NamedExecContext(ctx, `INSERT INTO person (first_name, last_name, email) VALUES (:first_name, :last_name, :email)`, p)
 		require.NoError(t, err)
 
 		{
 			p2 := &Person{}
-			rows, err := db.NamedQueryContext(ctx, "SELECT * FROM person WHERE first_name=:first_name", p)
+			rows, err := queryable.NamedQueryContext(ctx, "SELECT * FROM person WHERE first_name=:first_name", p)
 			if err != nil {
 				log.Fatal(err)
 			}
@@ -527,7 +527,7 @@ func TestNamedQueryContext(t *testing.T) {
 		// these are tests for #73;  they verify that named queries work if you've
 		// changed the db mapper.  This code checks both NamedQuery "ad-hoc" style
 		// queries and NamedStmt queries, which use different code paths internally.
-		old := (*db).Mapper
+		old := *mapper
 
 		type JSONPerson struct {
 			FirstName sql.NullString `json:"FIRST"`
@@ -541,21 +541,21 @@ func TestNamedQueryContext(t *testing.T) {
 			Email:     sql.NullString{String: "ben@smith.com", Valid: true},
 		}
 
-		db.Mapper = reflectx.NewMapperFunc("json", strings.ToUpper)
+		*mapper = reflectx.NewMapperFunc("json", strings.ToUpper)
 
 		// prepare queries for case sensitivity to test our ToUpper function.
 		// postgres and sqlite accept "", but mysql uses ``;  since Go's multi-line
 		// strings are `` we use "" by default and swap out for MySQL
-		pdb := func(s string, db *DB) string {
-			if db.DriverName() == "mysql" {
+		pdb := func(s string, queryable Queryable) string {
+			if queryable.DriverName() == "mysql" {
 				return strings.Replace(s, `"`, "`", -1)
 			}
 			return s
 		}
 
-		_, err = db.NamedExecContext(ctx, pdb(`INSERT INTO jsperson ("FIRST", last_name, "EMAIL") VALUES (:FIRST, :last_name, :EMAIL)`, db), jp)
+		_, err = queryable.NamedExecContext(ctx, pdb(`INSERT INTO jsperson ("FIRST", last_name, "EMAIL") VALUES (:FIRST, :last_name, :EMAIL)`, queryable), jp)
 		if err != nil {
-			t.Fatal(err, db.DriverName())
+			t.Fatal(err, queryable.DriverName())
 		}
 
 		// Checks that a person pulled out of the db matches the one we put in
@@ -567,24 +567,24 @@ func TestNamedQueryContext(t *testing.T) {
 					t.Error(err)
 				}
 				if jp.FirstName.String != "ben" {
-					t.Errorf("Expected first name of `ben`, got `%s` (%s) ", jp.FirstName.String, db.DriverName())
+					t.Errorf("Expected first name of `ben`, got `%s` (%s) ", jp.FirstName.String, queryable.DriverName())
 				}
 				if jp.LastName.String != "smith" {
-					t.Errorf("Expected LastName of `smith`, got `%s` (%s)", jp.LastName.String, db.DriverName())
+					t.Errorf("Expected LastName of `smith`, got `%s` (%s)", jp.LastName.String, queryable.DriverName())
 				}
 				if jp.Email.String != "ben@smith.com" {
-					t.Errorf("Expected first name of `doe`, got `%s` (%s)", jp.Email.String, db.DriverName())
+					t.Errorf("Expected first name of `doe`, got `%s` (%s)", jp.Email.String, queryable.DriverName())
 				}
 			}
 		}
 
-		ns, err := db.PrepareNamed(pdb(`
+		ns, err := queryable.PrepareNamed(pdb(`
 			SELECT * FROM jsperson
 			WHERE
 				"FIRST"=:FIRST AND
 				last_name=:last_name AND
 				"EMAIL"=:EMAIL
-		`, db))
+		`, queryable))
 		require.NoError(t, err)
 
 		rows, err := ns.QueryxContext(ctx, jp)
@@ -595,19 +595,19 @@ func TestNamedQueryContext(t *testing.T) {
 
 		// Check exactly the same thing, but with db.NamedQuery, which does not go
 		// through the PrepareNamed/NamedStmt path.
-		rows, err = db.NamedQueryContext(ctx, pdb(`
+		rows, err = queryable.NamedQueryContext(ctx, pdb(`
 			SELECT * FROM jsperson
 			WHERE
 				"FIRST"=:FIRST AND
 				last_name=:last_name AND
 				"EMAIL"=:EMAIL
-		`, db), jp)
+		`, queryable), jp)
 		require.NoError(t, err)
 
 		check(t, rows)
 		rows.Close()
 
-		db.Mapper = old
+		*mapper = old
 
 		// Test nested structs
 		type Place struct {
@@ -631,17 +631,17 @@ func TestNamedQueryContext(t *testing.T) {
 			Email:     sql.NullString{String: "ben@doe.com", Valid: true},
 		}
 
-		_, err = db.NamedExecContext(ctx, `INSERT INTO place (id, name) VALUES (1, :name)`, pl)
+		_, err = queryable.NamedExecContext(ctx, `INSERT INTO place (id, name) VALUES (1, :name)`, pl)
 		require.NoError(t, err)
 
 		id := 1
 		benDoe.Place.ID = id
 
-		_, err = db.NamedExecContext(ctx, `INSERT INTO placeperson (first_name, last_name, email, place_id) VALUES (:first_name, :last_name, :email, :place.id)`, benDoe)
+		_, err = queryable.NamedExecContext(ctx, `INSERT INTO placeperson (first_name, last_name, email, place_id) VALUES (:first_name, :last_name, :email, :place.id)`, benDoe)
 		require.NoError(t, err)
 
 		{
-			rows, err = db.NamedQueryContext(ctx, `
+			rows, err = queryable.NamedQueryContext(ctx, `
 			SELECT
 				first_name,
 				last_name,
@@ -679,17 +679,17 @@ func TestNamedQueryContext(t *testing.T) {
 			Name: sql.NullString{String: "the-house", Valid: true},
 		}
 
-		_, err = db.NamedExecContext(ctx, `INSERT INTO place (id, name) VALUES (2, :name)`, pl)
+		_, err = queryable.NamedExecContext(ctx, `INSERT INTO place (id, name) VALUES (2, :name)`, pl)
 		require.NoError(t, err)
 
 		id = 2
 		benDoe.Place.ID = id
 
-		_, err = db.NamedExecContext(ctx, `INSERT INTO placeperson (first_name, last_name, email, place_id) VALUES (:first_name, :last_name, :email, :place.id)`, benDoe)
+		_, err = queryable.NamedExecContext(ctx, `INSERT INTO placeperson (first_name, last_name, email, place_id) VALUES (:first_name, :last_name, :email, :place.id)`, benDoe)
 		require.NoError(t, err)
 
 		{
-			rows, err = db.NamedQueryContext(ctx, `
+			rows, err = queryable.NamedQueryContext(ctx, `
 			SELECT
 				place.id,
 				place.name,
@@ -711,7 +711,7 @@ func TestNamedQueryContext(t *testing.T) {
 		}
 
 		{
-			rows, err = db.NamedQueryContext(ctx, `
+			rows, err = queryable.NamedQueryContext(ctx, `
 			SELECT
 				place.id,
 				place.name,
@@ -752,7 +752,7 @@ func TestNamedQueryContext(t *testing.T) {
 		}
 
 		{
-			rows, err = db.NamedQueryContext(ctx, `
+			rows, err = queryable.NamedQueryContext(ctx, `
 			SELECT
 				place.id,
 				place.name,
@@ -786,10 +786,10 @@ func TestNamedQueryContext(t *testing.T) {
 				Notes: "this is a test person",
 			}
 
-			_, err = db.NamedExecContext(ctx, `INSERT INTO persondetails (email, notes) VALUES (:email, :notes)`, details)
+			_, err = queryable.NamedExecContext(ctx, `INSERT INTO persondetails (email, notes) VALUES (:email, :notes)`, details)
 			require.NoError(t, err)
 
-			rows, err = db.NamedQueryContext(ctx, `
+			rows, err = queryable.NamedQueryContext(ctx, `
 			SELECT
 				place.id,
 				place.name,
@@ -816,6 +816,18 @@ func TestNamedQueryContext(t *testing.T) {
 				assert.Equal(t, details.Email, pp6.Owner.Details.Email)
 				assert.Equal(t, details.Notes, pp6.Owner.Details.Notes)
 			}
+		}
+	}
+
+	RunWithSchemaContext(context.Background(), schema, t, func(ctx context.Context, db *DB, t *testing.T) {
+		testWithQueryable(ctx, db, &db.Mapper, t)
+	})
+
+	RunWithSchemaContext(context.Background(), schema, t, func(ctx context.Context, db *DB, t *testing.T) {
+		tx := db.MustBegin()
+		testWithQueryable(ctx, tx, &tx.Mapper, t)
+		if err := tx.Rollback(); err != nil {
+			t.Error(err)
 		}
 	})
 }
